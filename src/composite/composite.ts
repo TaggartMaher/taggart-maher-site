@@ -41,8 +41,8 @@ export function sampleNearest(image: RgbImage, uv: UvCoord): RgbColor {
 // Compose a single output pixel given samples from the three atlas passes
 // and the user-screen image. Mirrors the fragment shader exactly: `scale`
 // recovers the magnitude that the build pipeline divided out of whitelight
-// and position to fit them in the 8-bit atlas, and V is flipped before
-// sampling the user screen because Blender's UV map is V-down.
+// and position to fit them in the 8-bit atlas. No V flip — the canvas is
+// uploaded with UNPACK_FLIP_Y_WEBGL=true so canvas-Y matches plane V-up.
 export function composePixel(
   beauty: RgbColor,
   whitelight: RgbColor,
@@ -53,7 +53,7 @@ export function composePixel(
   const divisor = Math.max(whitelight.r, WHITELIGHT_EPS);
   const emitterUv: UvCoord = {
     u: position.r / divisor,
-    v: 1 - position.g / divisor,
+    v: position.g / divisor,
   };
   const screenColor = sampleNearest(userScreen, emitterUv);
   return {

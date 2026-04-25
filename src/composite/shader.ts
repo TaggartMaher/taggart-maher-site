@@ -12,9 +12,9 @@
 // see scripts/buildAssets.ts. The position/whitelight ratio is invariant
 // under that scaling so emitterUv is correct without further adjustment.
 //
-// Blender's screen-plane UV map is V-down (image-editor convention), so we
-// flip V on emitterUv before sampling user content (which is drawn into a
-// HTML canvas, also V-down). Without this, canvas-bottom maps to screen-top.
+// The atlas video is uploaded with UNPACK_FLIP_Y_WEBGL=true and the screen
+// plane uses Blender's default V-up unwrap, so emitterUv = (U, V) reads
+// canvas pixels in their natural orientation. No V flip in the shader.
 
 export const vertexShaderSource = `#version 300 es
 in vec2 a_position;
@@ -47,7 +47,6 @@ void main() {
   vec3 position   = texture(u_atlas, positionUv).rgb;
 
   vec2 emitterUv = position.rg / max(whitelight.r, WHITELIGHT_EPS);
-  emitterUv.y = 1.0 - emitterUv.y;
   vec3 screenColor = texture(u_screen, emitterUv).rgb;
 
   vec3 finalColor = beauty + u_scale * screenColor * whitelight;

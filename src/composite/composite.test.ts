@@ -63,11 +63,11 @@ describe("composePixel", () => {
     expect(composed.b).toBeCloseTo(1.05, 6);
   });
 
-  it("samples the user screen at position.rg / whitelight.r with V flipped", () => {
-    // With a UV-gradient user screen and uniform whitelight = 1, the U axis
-    // passes through unchanged but V is flipped (Blender's UV map is V-down,
-    // canvas data is V-down, the shader compensates by inverting V). For
-    // position = (0.25, 0.75), the sampled pixel has v = 1 - 0.75 = 0.25.
+  it("samples the user screen at position.rg / whitelight.r", () => {
+    // With a UV-gradient user screen and uniform whitelight = 1, the
+    // emitterUv equals position.rg directly (canvas is uploaded V-flipped
+    // so its Y-axis matches the plane's V-up convention). For position =
+    // (0.25, 0.75), the sampled pixel is at canvas (0.25, 0.75).
     const beauty = { r: 0, g: 0, b: 0 };
     const whitelight = { r: 1, g: 1, b: 1 };
     const position = { r: 0.25, g: 0.75, b: 0 };
@@ -76,7 +76,7 @@ describe("composePixel", () => {
     const composed = composePixel(beauty, whitelight, position, screen, 1);
 
     expect(composed.r).toBeCloseTo(0.25, 1);
-    expect(composed.g).toBeCloseTo(0.25, 1);
+    expect(composed.g).toBeCloseTo(0.75, 1);
     expect(composed.b).toBeCloseTo(0, 6);
   });
 

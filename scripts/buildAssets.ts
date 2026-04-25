@@ -34,9 +34,20 @@ const atlasMetaPath = join(compositeDir, "atlasMeta.json");
 // the shader then multiplies the bounce contribution back by E so the math
 // `position / whitelight` (the emitter UV) is preserved with its full
 // dynamic range. Beauty is untouched — its values are well under 1.
+//
+// `encoding` is the OETF applied to the linear values before 8-bit
+// quantization. H.264 is invariably tagged BT.709, and any standards-compliant
+// decoder (browser, video player) applies the BT.709 EOTF on display. If we
+// stored linear, the decoder would gamma-decode it a second time and crush
+// mid-tones to ~40% of their value. We pre-encode with sRGB (close enough to
+// BT.709 OETF) so the round-trip cancels and the shader receives linear
+// values back. Bumping `encoding` invalidates the PNG cache.
 interface AtlasMeta {
   scale: number;
+  encoding: string;
 }
+
+const atlasEncoding = "srgb-v1";
 
 function detectAtlasScale(rendersDir: string): number {
   const sampleFrame = join(rendersDir, "whitelight", "whitelight-0001.exr");
@@ -63,7 +74,9 @@ function readAtlasMeta(): AtlasMeta | null {
   if (!existsSync(atlasMetaPath)) return null;
   try {
     const parsed = JSON.parse(readFileSync(atlasMetaPath, "utf8")) as Partial<AtlasMeta>;
-    if (typeof parsed.scale === "number") return { scale: parsed.scale };
+    if (typeof parsed.scale === "number" && typeof parsed.encoding === "string") {
+      return { scale: parsed.scale, encoding: parsed.encoding };
+    }
   } catch {
     /* fall through */
   }
@@ -133,9 +146,11 @@ const atlasScale = detectAtlasScale(blenderRendersDir);
 const inverseScale = 1 / atlasScale;
 const previousMeta = readAtlasMeta();
 const scaleChanged = previousMeta === null || Math.abs(previousMeta.scale - atlasScale) > 1e-6;
-if (scaleChanged) {
+const encodingChanged = previousMeta === null || previousMeta.encoding !== atlasEncoding;
+const cacheInvalidated = scaleChanged || encodingChanged;
+if (cacheInvalidated) {
   console.log(
-    `[assets] atlas scale = ${atlasScale.toFixed(6)} (whitelight EXR max). PNG cache will be rebuilt.`,
+    `[assets] scale = ${atlasScale.toFixed(6)}, encoding = ${atlasEncoding}. PNG cache will be rebuilt.`,
   );
 }
 
@@ -144,7 +159,7 @@ for (let frameIndex = 1; frameIndex <= frameCount; frameIndex += 1) {
   const inputs = passes.map((pass) => exrPath(pass, frameIndex));
   const outputPath = cachedPngPath(frameIndex);
 
-  if (!scaleChanged && existsSync(outputPath)) {
+  if (!cacheInvalidated && existsSync(outputPath)) {
     const outputMtime = fileMtime(outputPath);
     const newestInputMtime = inputs.reduce(
       (newest, inputPath) => Math.max(newest, fileMtime(inputPath)),
@@ -168,6 +183,12 @@ for (let frameIndex = 1; frameIndex <= frameCount; frameIndex += 1) {
       inverseScaleArg,
       "--mosaic",
       "3x1",
+      // Apply sRGB OETF so the values survive the decoder's BT.709 EOTF
+      // round-trip. Without this the H.264 file looks dim in any viewer
+      // and the shader receives gamma-crushed values.
+      "--colorconvert",
+      "linear",
+      "sRGB",
       "-d",
       "uint8",
       "-o",
@@ -242,4 +263,4 @@ if (needsEncode) {
 // Step 3: write metadata sidecar. The runtime fetches this and feeds the
 // scale into the shader so the bounce term is multiplied back to the
 // pre-scaled scene-referred magnitude.
-writeAtlasMeta({ scale: atlasScale });
+writeAtlasMeta({ scale: atlasScale, encoding: atlasEncoding });
