@@ -13,7 +13,7 @@
 // the script logs a warning and exits 0 — the site falls back to the no-CGI
 // path at runtime. Asset build never fails the dev or production build.
 
-import { existsSync, mkdirSync, readdirSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
@@ -25,6 +25,54 @@ const repoRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const cacheDir = join(repoRoot, ".cache", "encode");
 const compositeDir = join(repoRoot, "public", "composite");
 const atlasPath = join(compositeDir, "atlas.mp4");
+const atlasMetaPath = join(compositeDir, "atlasMeta.json");
+
+// Pre-scale factor for the whitelight + position passes. Blender renders these
+// at the screen's emission strength (E), which exceeds 1.0 in linear EXR and
+// would saturate to 1 when we encode 8-bit PNG. We detect E from the
+// whitelight pass and divide both passes by it on the way into the atlas;
+// the shader then multiplies the bounce contribution back by E so the math
+// `position / whitelight` (the emitter UV) is preserved with its full
+// dynamic range. Beauty is untouched — its values are well under 1.
+interface AtlasMeta {
+  scale: number;
+}
+
+function detectAtlasScale(rendersDir: string): number {
+  const sampleFrame = join(rendersDir, "whitelight", "whitelight-0001.exr");
+  const result = spawnSync("oiiotool", ["--stats", sampleFrame], { encoding: "utf8" });
+  if (result.status !== 0) {
+    throw new Error(`[assets] oiiotool --stats failed:\n${result.stderr}`);
+  }
+  const maxLine = result.stdout.match(/Stats Max:\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)/);
+  if (!maxLine) {
+    throw new Error("[assets] could not parse whitelight Stats Max output");
+  }
+  const channelMax = Math.max(
+    parseFloat(maxLine[1]),
+    parseFloat(maxLine[2]),
+    parseFloat(maxLine[3]),
+  );
+  if (!Number.isFinite(channelMax) || channelMax <= 0) {
+    throw new Error(`[assets] invalid whitelight max: ${channelMax}`);
+  }
+  return channelMax;
+}
+
+function readAtlasMeta(): AtlasMeta | null {
+  if (!existsSync(atlasMetaPath)) return null;
+  try {
+    const parsed = JSON.parse(readFileSync(atlasMetaPath, "utf8")) as Partial<AtlasMeta>;
+    if (typeof parsed.scale === "number") return { scale: parsed.scale };
+  } catch {
+    /* fall through */
+  }
+  return null;
+}
+
+function writeAtlasMeta(meta: AtlasMeta): void {
+  writeFileSync(atlasMetaPath, `${JSON.stringify(meta, null, 2)}\n`);
+}
 
 const blenderRendersDir = process.env.BLENDER_RENDERS_DIR;
 
@@ -76,15 +124,27 @@ if (!allInputsPresent) {
   process.exit(0);
 }
 
-// Step 1: per-frame mosaic via oiiotool, cached.
+// Step 1: per-frame mosaic via oiiotool, cached. Whitelight + position get
+// scaled by 1/scale before 8-bit quantization; beauty is passed through.
+mkdirSync(compositeDir, { recursive: true });
 mkdirSync(cacheDir, { recursive: true });
+
+const atlasScale = detectAtlasScale(blenderRendersDir);
+const inverseScale = 1 / atlasScale;
+const previousMeta = readAtlasMeta();
+const scaleChanged = previousMeta === null || Math.abs(previousMeta.scale - atlasScale) > 1e-6;
+if (scaleChanged) {
+  console.log(
+    `[assets] atlas scale = ${atlasScale.toFixed(6)} (whitelight EXR max). PNG cache will be rebuilt.`,
+  );
+}
 
 let frameMosaicCount = 0;
 for (let frameIndex = 1; frameIndex <= frameCount; frameIndex += 1) {
   const inputs = passes.map((pass) => exrPath(pass, frameIndex));
   const outputPath = cachedPngPath(frameIndex);
 
-  if (existsSync(outputPath)) {
+  if (!scaleChanged && existsSync(outputPath)) {
     const outputMtime = fileMtime(outputPath);
     const newestInputMtime = inputs.reduce(
       (newest, inputPath) => Math.max(newest, fileMtime(inputPath)),
@@ -95,9 +155,24 @@ for (let frameIndex = 1; frameIndex <= frameCount; frameIndex += 1) {
     }
   }
 
+  const inverseScaleArg = inverseScale.toString();
   const result = spawnSync(
     "oiiotool",
-    [...inputs, "--mosaic", "3x1", "-d", "uint8", "-o", outputPath],
+    [
+      exrPath("beauty", frameIndex),
+      exrPath("whitelight", frameIndex),
+      "--mulc",
+      inverseScaleArg,
+      exrPath("position", frameIndex),
+      "--mulc",
+      inverseScaleArg,
+      "--mosaic",
+      "3x1",
+      "-d",
+      "uint8",
+      "-o",
+      outputPath,
+    ],
     { stdio: "inherit" },
   );
   if (result.status !== 0) {
@@ -112,8 +187,6 @@ if (frameMosaicCount > 0) {
 }
 
 // Step 2: encode atlas.mp4 from the cached PNG sequence via ffmpeg.
-mkdirSync(compositeDir, { recursive: true });
-
 const pngPattern = join(cacheDir, "atlas-%04d.png");
 let needsEncode = true;
 if (existsSync(atlasPath)) {
@@ -165,3 +238,8 @@ if (needsEncode) {
   }
   console.log(`[assets] encoded atlas -> ${atlasPath}`);
 }
+
+// Step 3: write metadata sidecar. The runtime fetches this and feeds the
+// scale into the shader so the bounce term is multiplied back to the
+// pre-scaled scene-referred magnitude.
+writeAtlasMeta({ scale: atlasScale });
