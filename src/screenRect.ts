@@ -5,8 +5,10 @@
 // Inputs use Blender conventions:
 //   - Distances in meters.
 //   - Rotations are XYZ Euler in degrees (Blender mathutils.Euler "XYZ"),
-//     producing the rotation matrix R = Rx · Ry · Rz applied as
-//     v_world = R · v_local + position.
+//     producing the rotation matrix R = Rz · Ry · Rx applied as
+//     v_world = R · v_local + position. ("XYZ" describes the order rotations
+//     are applied to the vector in the world frame: Rx first, then Ry, then
+//     Rz — which composes left-to-right as Rz · Ry · Rx.)
 //   - Camera local frame: looks down -Z, +Y up, +X right (Blender default).
 //   - Screen plane local frame: lies in the XY plane (normal +Z) with the
 //     given width along local X and height along local Y; centered at its
@@ -52,11 +54,11 @@ function rotationMatrixXYZ(eulerDeg: Vector3): Matrix3 {
   const cosZ = Math.cos(zRadians);
   const sinZ = Math.sin(zRadians);
 
-  // Blender XYZ Euler: R = Rx · Ry · Rz.
+  // Blender XYZ Euler: R = Rz · Ry · Rx.
   return [
-    [cosY * cosZ, -cosY * sinZ, sinY],
-    [cosX * sinZ + sinX * sinY * cosZ, cosX * cosZ - sinX * sinY * sinZ, -sinX * cosY],
-    [sinX * sinZ - cosX * sinY * cosZ, sinX * cosZ + cosX * sinY * sinZ, cosX * cosY],
+    [cosZ * cosY, cosZ * sinY * sinX - sinZ * cosX, cosZ * sinY * cosX + sinZ * sinX],
+    [sinZ * cosY, sinZ * sinY * sinX + cosZ * cosX, sinZ * sinY * cosX - cosZ * sinX],
+    [-sinY, cosY * sinX, cosY * cosX],
   ];
 }
 

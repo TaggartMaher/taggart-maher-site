@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { screenRect as configuredScreenRect } from "./config";
 import { computeScreenRect } from "./screenRect";
 
 const TOLERANCE = 1e-6;
@@ -78,5 +79,40 @@ describe("computeScreenRect", () => {
     );
 
     expect(shifted.left).toBeGreaterThan(centered.left + TOLERANCE);
+  });
+
+  it("uses Blender's XYZ Euler order (Rz · Ry · Rx) — multi-axis rotation case", () => {
+    // Camera at the origin, rotated +90deg around X (so its local -Z lines up
+    // with world +Y), then +90deg around Z. In Blender's XYZ extrinsic order
+    // this composes as Rz · Ry · Rx, which sends the camera's view direction
+    // to world -X. A screen at world (-5, 0, 0) is therefore directly in
+    // front, dead center.
+    const rect = computeScreenRect(
+      {
+        positionMeters: [0, 0, 0],
+        rotationEulerDegXYZ: [90, 0, 90],
+        horizontalFovDeg: 60,
+      },
+      {
+        positionMeters: [-5, 0, 0],
+        rotationEulerDegXYZ: [0, 90, 0],
+        widthMeters: 1,
+        heightMeters: 1,
+      },
+      1,
+    );
+
+    expect(rect.left + rect.width / 2).toBeCloseTo(0.5, 6);
+    expect(rect.top + rect.height / 2).toBeCloseTo(0.5, 6);
+  });
+
+  it("locks in the configured camera + screen plane (regression guard)", () => {
+    // Snapshot of the rect computed from src/config.ts. Drift in the camera
+    // pose, screen plane, render aspect, or rotation convention will trip
+    // this. Update the expected values when the .blend changes intentionally.
+    expect(configuredScreenRect.left).toBeCloseTo(0.2725380211759628, 12);
+    expect(configuredScreenRect.top).toBeCloseTo(0.4192700835351703, 12);
+    expect(configuredScreenRect.width).toBeCloseTo(0.5589033524878813, 12);
+    expect(configuredScreenRect.height).toBeCloseTo(0.16572264003470677, 12);
   });
 });

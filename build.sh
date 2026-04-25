@@ -1,5 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 cd "$(dirname "$0")"
-pnpm exec tsx scripts/linkAssets.ts
+if [ -f .env ]; then
+  set -a
+  # shellcheck disable=SC1091
+  source .env
+  set +a
+fi
+pnpm exec tsx scripts/buildAssets.ts
 exec pnpm build "$@"

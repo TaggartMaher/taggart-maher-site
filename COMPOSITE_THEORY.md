@@ -112,23 +112,23 @@ The pipeline is implemented via View Layers + Collections (no script). The names
 
 **Collections**
 
-| Collection      | Contents                                                  |
-| --------------- | --------------------------------------------------------- |
-| `Scene`         | Camera, walls, props — anything identical across passes.  |
-| `StaticLights`  | All non-screen lights (and any black-world stand-in).     |
-| `SceneBeauty`   | `SCREEN` — the parent / source-of-truth screen object.    |
-| `SceneWhite`    | `SCREEN_WHITE` — linked duplicate, white emission.        |
+| Collection      | Contents                                                    |
+| --------------- | ----------------------------------------------------------- |
+| `Scene`         | Camera, walls, props — anything identical across passes.    |
+| `StaticLights`  | All non-screen lights (and any black-world stand-in).       |
+| `SceneBeauty`   | `SCREEN` — the parent / source-of-truth screen object.      |
+| `SceneWhite`    | `SCREEN_WHITE` — linked duplicate, white emission.          |
 | `ScenePosition` | `SCREEN_POSITION` — linked duplicate, UV-gradient emission. |
 
 `SCREEN_WHITE` and `SCREEN_POSITION` are Alt-D linked duplicates of `SCREEN` (shared mesh data) and parented to `SCREEN` so transforms propagate. Edit `SCREEN` only.
 
 **View Layers**
 
-| Layer        | Included collections                       |
-| ------------ | ------------------------------------------ |
-| `Beauty`     | `Scene`, `StaticLights`, `SceneBeauty`     |
-| `WhiteLight` | `Scene`, `SceneWhite`                      |
-| `Position`   | `Scene`, `ScenePosition`                   |
+| Layer        | Included collections                   |
+| ------------ | -------------------------------------- |
+| `Beauty`     | `Scene`, `StaticLights`, `SceneBeauty` |
+| `WhiteLight` | `Scene`, `SceneWhite`                  |
+| `Position`   | `Scene`, `ScenePosition`               |
 
 Exclusion is done via the Outliner's **Exclude from View Layer** checkbox (per-view-layer), not the eye visibility icon.
 
