@@ -1,7 +1,8 @@
 import { useEffect, useRef } from "react";
 import { atlasPath } from "../config";
 import { fragmentShaderSource, vertexShaderSource } from "./shader";
-import { createScreenContentCanvas, drawScreenContent } from "./screenContent";
+
+const screenContentImageUrl = "/composite/screen-test.png";
 
 function compileShader(gl: WebGL2RenderingContext, type: number, source: string): WebGLShader {
   const shader = gl.createShader(type);
@@ -94,16 +95,28 @@ export function Compositor() {
     // the position-pass UVs and screen-content sampling agree.
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
 
-    const screenContentCanvas = createScreenContentCanvas();
-    const screenContentContext = screenContentCanvas.getContext("2d");
-    if (!screenContentContext) {
-      throw new Error("[compositor] could not get 2D context for screen content canvas");
-    }
-
     let cancelled = false;
     let videoFrameCallbackHandle: number | null = null;
     let animationFrameHandle: number | null = null;
-    const startTimeMs = performance.now();
+
+    // Static screen content: load the test image once and upload it to the
+    // screen texture. The atlas video continues to play; only the screen
+    // contribution is now a fixed image instead of the cycling-corner debug
+    // pattern.
+    const screenContentImage = new Image();
+    screenContentImage.crossOrigin = "anonymous";
+    screenContentImage.src = screenContentImageUrl;
+    let screenContentReady = false;
+    screenContentImage.onload = () => {
+      if (cancelled || !gl) return;
+      gl.activeTexture(gl.TEXTURE1);
+      gl.bindTexture(gl.TEXTURE_2D, screenTexture);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, screenContentImage);
+      screenContentReady = true;
+    };
+    screenContentImage.onerror = () => {
+      console.warn(`[compositor] failed to load screen content image: ${screenContentImageUrl}`);
+    };
 
     // The build pipeline pre-scales whitelight + position into [0,1] and
     // writes the scale factor here. Until the metadata arrives we render
@@ -146,11 +159,7 @@ export function Compositor() {
         gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, video);
       }
 
-      // Refresh the placeholder user-screen content (cycling corner rect).
-      drawScreenContent(screenContentContext!, performance.now() - startTimeMs);
-      gl.activeTexture(gl.TEXTURE1);
-      gl.bindTexture(gl.TEXTURE_2D, screenTexture);
-      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, screenContentCanvas);
+      if (!screenContentReady) return;
 
       resizeCanvasToViewport();
 

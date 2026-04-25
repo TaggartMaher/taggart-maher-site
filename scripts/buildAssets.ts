@@ -7,6 +7,14 @@
 // BT.709 EOTF round-trip, and encodes to public/composite/atlas.mp4 as
 // 8-bit H.264 yuv420p.
 //
+// 4:2:0 yuv420p is the only chroma format that plays via `<video>` across
+// Chrome, Firefox, and Safari — system decoders (Media Foundation,
+// AVFoundation) reject 4:4:4 and 4:2:2 outright. VP9 profile 3 / H.264
+// Hi444PP / AV1 high-profile would all preserve the position pass's R/G
+// coordinates exactly, but only Chrome can decode them. The position-pass
+// artifacts from chroma subsampling on the wall bounce light have been
+// acceptable in practice with crf 6.
+//
 // Going EXR -> ffmpeg directly (no intermediate PNG) avoids a redundant
 // 8-bit quantization before the encoder. libx264 gets float input and does
 // its own dithered, rate-distortion-aware quantization.
@@ -51,7 +59,7 @@ interface AtlasMeta {
   encoding: string;
 }
 
-const atlasEncoding = "srgb-v1";
+const atlasEncoding = "h264-420-srgb-v1";
 
 function detectAtlasScale(rendersDir: string): number {
   const sampleFrame = join(rendersDir, "whitelight", "whitelight-0001.exr");
@@ -129,14 +137,6 @@ for (const pass of passes) {
     allInputsPresent = false;
     continue;
   }
-  const exrFiles = readdirSync(passDirectory).filter((name) => name.endsWith(".exr"));
-  if (exrFiles.length !== frameCount) {
-    console.warn(
-      `[assets] pass ${pass}: expected ${frameCount} EXR frames, found ${exrFiles.length} in ${passDirectory}`,
-    );
-    allInputsPresent = false;
-    continue;
-  }
   for (let frameIndex = 1; frameIndex <= frameCount; frameIndex += 1) {
     const mtime = fileMtime(exrPath(pass, frameIndex));
     if (mtime > newestInputMtime) newestInputMtime = mtime;
@@ -169,7 +169,7 @@ if (!metaChanged && existsSync(atlasPath)) {
 
 if (needsEncode) {
   console.log(`[assets] scale = ${atlasScale.toFixed(6)}, encoding = ${atlasEncoding}`);
-  console.log(`[assets] encoding atlas with libx264 yuv420p crf 12 preset slower...`);
+  console.log(`[assets] encoding atlas with libx264 yuv420p crf 6 preset slower...`);
 
   // Filter graph: read each pass as planar float RGB. whitelight + position
   // get multiplied by 1/scale via colorchannelmixer (operates on float).

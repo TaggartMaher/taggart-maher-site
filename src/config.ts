@@ -30,9 +30,11 @@ export const screenPlane: ScreenPlane = {
 
 export const screenRect = computeScreenRect(cameraPose, screenPlane, renderAspect);
 
-// Composite atlas video — a single 3x-wide H.264 file containing all three
-// passes side-by-side (beauty | whitelight | position) at `renderAspect` per
-// pass. Built by scripts/buildAssets.ts and served from public/composite/ by
-// Vite. The shader samples each third of the frame as its own pass, so frame
-// lock between passes is automatic.
+// Composite atlas video — a single 3x-wide H.264 yuv420p MP4 file
+// containing all three passes side-by-side (beauty | whitelight |
+// position) at `renderAspect` per pass. Built by scripts/buildAssets.ts
+// and served from public/composite/ by Vite. The shader samples each
+// third of the frame as its own pass, so frame lock between passes is
+// automatic. 4:2:0 is the only chroma format that decodes via `<video>`
+// in Chrome, Firefox, and Safari — system decoders reject 4:4:4.
 export const atlasPath = "/composite/atlas.mp4";
