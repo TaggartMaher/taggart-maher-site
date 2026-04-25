@@ -16,16 +16,16 @@ export const renderAspect = 16 / 9;
 // defaults). The screen plane lies in its local XY plane with `widthMeters`
 // along local X and `heightMeters` along local Y, centered at its position.
 export const cameraPose: CameraPose = {
-  positionMeters: [0, 0, 0],
-  rotationEulerDegXYZ: [0, 0, 0],
-  horizontalFovDeg: 60,
+  positionMeters: [0.459539, 0.036977, 0.48932],
+  rotationEulerDegXYZ: [76.7184, 1.23951, -267.355],
+  horizontalFovDeg: 80.8044,
 };
 
 export const screenPlane: ScreenPlane = {
-  positionMeters: [0, 0, -2],
-  rotationEulerDegXYZ: [0, 0, 0],
-  widthMeters: 0.6,
-  heightMeters: 0.34,
+  positionMeters: [-0.177359, 0.041848, 0.360192],
+  rotationEulerDegXYZ: [-1.20527, -3.16211, 1.46014],
+  widthMeters: 0.569,
+  heightMeters: 0.35,
 };
 
 export const screenRect = computeScreenRect(cameraPose, screenPlane, renderAspect);
