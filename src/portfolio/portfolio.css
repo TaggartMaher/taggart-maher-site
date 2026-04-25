@@ -1,0 +1,84 @@
+.portfolio {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 3rem 1.5rem 4rem;
+  font-family:
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    Roboto,
+    sans-serif;
+  color: #1a1a1a;
+  line-height: 1.55;
+}
+
+.portfolio-header {
+  margin-bottom: 2.5rem;
+}
+
+.portfolio-header h1 {
+  font-size: 2.25rem;
+  margin: 0 0 0.25rem;
+  letter-spacing: -0.01em;
+}
+
+.portfolio-tagline {
+  margin: 0;
+  color: #555;
+}
+
+.portfolio-section {
+  margin-bottom: 2.5rem;
+}
+
+.portfolio-section h2 {
+  font-size: 1.1rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #666;
+  margin: 0 0 0.75rem;
+}
+
+.portfolio-projects {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.portfolio-project {
+  margin-bottom: 1.5rem;
+}
+
+.portfolio-project h3 {
+  margin: 0 0 0.25rem;
+  font-size: 1.05rem;
+}
+
+.portfolio-project p {
+  margin: 0 0 0.35rem;
+}
+
+.portfolio-contact {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.portfolio-contact li {
+  margin-bottom: 0.35rem;
+}
+
+a {
+  color: #2563eb;
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+body {
+  margin: 0;
+  background: #fafafa;
+}
