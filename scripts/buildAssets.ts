@@ -1,17 +1,26 @@
 // Build the composite atlas video from the Blender renders.
 //
-// Pipeline (delivery format A1 — single 3x-wide H.264 atlas):
-//   1. For each frame N, mosaic the three EXR passes (beauty, whitelight,
-//      position) horizontally into a single 8-bit PNG via oiiotool. Cached
-//      per-frame in .cache/encode/.
-//   2. Encode the PNG sequence into public/composite/atlas.mp4 with ffmpeg.
+// A single ffmpeg invocation reads the three EXR pass sequences (beauty,
+// whitelight, position) directly as float, pre-scales whitelight + position
+// by 1/E (the screen emission strength), mosaics the three passes
+// horizontally, applies the sRGB OETF so the values survive the decoder's
+// BT.709 EOTF round-trip, and encodes to public/composite/atlas.mp4 as
+// 8-bit H.264 yuv420p.
 //
-// Both stages are idempotent: each output is rebuilt only when its inputs are
-// newer. Re-runs in dev are a no-op once the atlas is up to date.
+// Going EXR -> ffmpeg directly (no intermediate PNG) avoids a redundant
+// 8-bit quantization before the encoder. libx264 gets float input and does
+// its own dithered, rate-distortion-aware quantization.
+//
+// Idempotent: rebuilds only when any EXR is newer than atlas.mp4 or when
+// the detected scale / encoding tag changes.
 //
 // If BLENDER_RENDERS_DIR is unset or any pass directory / frame is missing,
 // the script logs a warning and exits 0 — the site falls back to the no-CGI
 // path at runtime. Asset build never fails the dev or production build.
+//
+// Tooling: requires ffmpeg built with libzimg (the `zscale` filter) for the
+// linear -> sRGB OETF conversion, and oiiotool for the one-shot scale
+// detection on the whitelight pass.
 
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -22,26 +31,21 @@ import { frameCount, fps } from "../src/config";
 const passes = ["beauty", "whitelight", "position"] as const;
 
 const repoRoot = dirname(dirname(fileURLToPath(import.meta.url)));
-const cacheDir = join(repoRoot, ".cache", "encode");
 const compositeDir = join(repoRoot, "public", "composite");
 const atlasPath = join(compositeDir, "atlas.mp4");
 const atlasMetaPath = join(compositeDir, "atlasMeta.json");
 
-// Pre-scale factor for the whitelight + position passes. Blender renders these
-// at the screen's emission strength (E), which exceeds 1.0 in linear EXR and
-// would saturate to 1 when we encode 8-bit PNG. We detect E from the
-// whitelight pass and divide both passes by it on the way into the atlas;
-// the shader then multiplies the bounce contribution back by E so the math
-// `position / whitelight` (the emitter UV) is preserved with its full
-// dynamic range. Beauty is untouched — its values are well under 1.
+// `scale` is the screen emission strength E detected from the whitelight
+// pass. whitelight + position are divided by E before quantization so they
+// fit in [0,1]; the shader multiplies the bounce contribution back by E so
+// `position / whitelight` (the emitter UV) keeps its full dynamic range.
 //
-// `encoding` is the OETF applied to the linear values before 8-bit
-// quantization. H.264 is invariably tagged BT.709, and any standards-compliant
-// decoder (browser, video player) applies the BT.709 EOTF on display. If we
-// stored linear, the decoder would gamma-decode it a second time and crush
-// mid-tones to ~40% of their value. We pre-encode with sRGB (close enough to
-// BT.709 OETF) so the round-trip cancels and the shader receives linear
-// values back. Bumping `encoding` invalidates the PNG cache.
+// `encoding` records the OETF applied to the linear values before 8-bit
+// quantization. H.264 is invariably tagged BT.709, and any standards-
+// compliant decoder applies the BT.709 EOTF on display. We pre-encode with
+// sRGB (close enough to BT.709 OETF) so the round-trip cancels and the
+// shader receives linear values back. Bumping `encoding` invalidates the
+// atlas.
 interface AtlasMeta {
   scale: number;
   encoding: string;
@@ -106,16 +110,18 @@ function exrPath(pass: (typeof passes)[number], frameIndex: number): string {
   return join(blenderRendersDir!, pass, `${pass}-${paddedFrameNumber(frameIndex)}.exr`);
 }
 
-function cachedPngPath(frameIndex: number): string {
-  return join(cacheDir, `atlas-${paddedFrameNumber(frameIndex)}.png`);
+function passPattern(pass: (typeof passes)[number]): string {
+  return join(blenderRendersDir!, pass, `${pass}-%04d.exr`);
 }
 
 function fileMtime(path: string): number {
   return statSync(path).mtimeMs;
 }
 
-// Step 0: verify every pass directory has the right number of frames.
+// Step 0: verify every pass directory has the right number of frames, and
+// track the newest input mtime for the cache check.
 let allInputsPresent = true;
+let newestInputMtime = 0;
 for (const pass of passes) {
   const passDirectory = join(blenderRendersDir, pass);
   if (!existsSync(passDirectory)) {
@@ -129,6 +135,11 @@ for (const pass of passes) {
       `[assets] pass ${pass}: expected ${frameCount} EXR frames, found ${exrFiles.length} in ${passDirectory}`,
     );
     allInputsPresent = false;
+    continue;
+  }
+  for (let frameIndex = 1; frameIndex <= frameCount; frameIndex += 1) {
+    const mtime = fileMtime(exrPath(pass, frameIndex));
+    if (mtime > newestInputMtime) newestInputMtime = mtime;
   }
 }
 
@@ -139,97 +150,39 @@ if (!allInputsPresent) {
   process.exit(0);
 }
 
-// Step 1: per-frame mosaic via oiiotool, cached. Whitelight + position get
-// scaled by 1/scale before 8-bit quantization; beauty is passed through.
 mkdirSync(compositeDir, { recursive: true });
-mkdirSync(cacheDir, { recursive: true });
 
 const atlasScale = detectAtlasScale(blenderRendersDir);
 const inverseScale = 1 / atlasScale;
 const previousMeta = readAtlasMeta();
 const scaleChanged = previousMeta === null || Math.abs(previousMeta.scale - atlasScale) > 1e-6;
 const encodingChanged = previousMeta === null || previousMeta.encoding !== atlasEncoding;
-const cacheInvalidated = scaleChanged || encodingChanged;
-if (cacheInvalidated) {
-  console.log(
-    `[assets] scale = ${atlasScale.toFixed(6)}, encoding = ${atlasEncoding}. PNG cache will be rebuilt.`,
-  );
-}
+const metaChanged = scaleChanged || encodingChanged;
 
-let frameMosaicCount = 0;
-for (let frameIndex = 1; frameIndex <= frameCount; frameIndex += 1) {
-  const inputs = passes.map((pass) => exrPath(pass, frameIndex));
-  const outputPath = cachedPngPath(frameIndex);
-
-  if (!cacheInvalidated && existsSync(outputPath)) {
-    const outputMtime = fileMtime(outputPath);
-    const newestInputMtime = inputs.reduce(
-      (newest, inputPath) => Math.max(newest, fileMtime(inputPath)),
-      0,
-    );
-    if (outputMtime >= newestInputMtime) {
-      continue;
-    }
-  }
-
-  const inverseScaleArg = inverseScale.toString();
-  const result = spawnSync(
-    "oiiotool",
-    [
-      exrPath("beauty", frameIndex),
-      exrPath("whitelight", frameIndex),
-      "--mulc",
-      inverseScaleArg,
-      exrPath("position", frameIndex),
-      "--mulc",
-      inverseScaleArg,
-      "--mosaic",
-      "3x1",
-      // Apply sRGB OETF so the values survive the decoder's BT.709 EOTF
-      // round-trip. Without this the H.264 file looks dim in any viewer
-      // and the shader receives gamma-crushed values.
-      "--colorconvert",
-      "linear",
-      "sRGB",
-      "-d",
-      "uint8",
-      "-o",
-      outputPath,
-    ],
-    { stdio: "inherit" },
-  );
-  if (result.status !== 0) {
-    console.error(`[assets] oiiotool failed on frame ${frameIndex}`);
-    process.exit(result.status ?? 1);
-  }
-  frameMosaicCount += 1;
-  if (frameMosaicCount % 16 === 0) {
-    console.log(`[assets] mosaic progress: ${frameMosaicCount}/${frameCount}`);
-  }
-}
-
-if (frameMosaicCount > 0) {
-  console.log(`[assets] mosaiced ${frameMosaicCount} frame(s)`);
-}
-
-// Step 2: encode atlas.mp4 from the cached PNG sequence via ffmpeg.
-const pngPattern = join(cacheDir, "atlas-%04d.png");
 let needsEncode = true;
-if (existsSync(atlasPath)) {
-  const atlasMtime = fileMtime(atlasPath);
-  let newestPngMtime = 0;
-  for (let frameIndex = 1; frameIndex <= frameCount; frameIndex += 1) {
-    const pngMtime = fileMtime(cachedPngPath(frameIndex));
-    if (pngMtime > newestPngMtime) newestPngMtime = pngMtime;
-  }
-  if (atlasMtime >= newestPngMtime) {
+if (!metaChanged && existsSync(atlasPath)) {
+  if (fileMtime(atlasPath) >= newestInputMtime) {
     needsEncode = false;
     console.log(`[assets] atlas up to date at ${atlasPath}`);
   }
 }
 
 if (needsEncode) {
+  console.log(`[assets] scale = ${atlasScale.toFixed(6)}, encoding = ${atlasEncoding}`);
   console.log(`[assets] encoding atlas with libx264 yuv420p crf 12 preset slower...`);
+
+  // Filter graph: read each pass as planar float RGB. whitelight + position
+  // get multiplied by 1/scale via colorchannelmixer (operates on float).
+  // hstack the three passes into a 3x-wide float frame, apply the sRGB OETF
+  // via zscale, then convert to yuv420p for libx264.
+  const channelScale = `colorchannelmixer=rr=${inverseScale}:gg=${inverseScale}:bb=${inverseScale}`;
+  const filterGraph = [
+    `[0:v]format=gbrpf32le[beauty]`,
+    `[1:v]format=gbrpf32le,${channelScale}[whitelight]`,
+    `[2:v]format=gbrpf32le,${channelScale}[position]`,
+    `[beauty][whitelight][position]hstack=inputs=3,zscale=tin=linear:t=iec61966-2-1,format=yuv420p[out]`,
+  ].join(";");
+
   const result = spawnSync(
     "ffmpeg",
     [
@@ -242,19 +195,39 @@ if (needsEncode) {
       "-start_number",
       "1",
       "-i",
-      pngPattern,
+      passPattern("beauty"),
+      "-framerate",
+      String(fps),
+      "-start_number",
+      "1",
+      "-i",
+      passPattern("whitelight"),
+      "-framerate",
+      String(fps),
+      "-start_number",
+      "1",
+      "-i",
+      passPattern("position"),
       "-frames:v",
       String(frameCount),
+      "-filter_complex",
+      filterGraph,
+      "-map",
+      "[out]",
       "-c:v",
       "libx264",
-      "-pix_fmt",
-      "yuv420p",
       "-preset",
       "slower",
       "-crf",
-      "12",
+      "6",
       "-color_range",
       "pc",
+      "-color_primaries",
+      "bt709",
+      "-color_trc",
+      "bt709",
+      "-colorspace",
+      "bt709",
       "-movflags",
       "+faststart",
       atlasPath,
@@ -268,7 +241,7 @@ if (needsEncode) {
   console.log(`[assets] encoded atlas -> ${atlasPath}`);
 }
 
-// Step 3: write metadata sidecar. The runtime fetches this and feeds the
-// scale into the shader so the bounce term is multiplied back to the
-// pre-scaled scene-referred magnitude.
+// Metadata sidecar: the runtime fetches this and feeds the scale into the
+// shader so the bounce term is multiplied back to the pre-scaled
+// scene-referred magnitude.
 writeAtlasMeta({ scale: atlasScale, encoding: atlasEncoding });
