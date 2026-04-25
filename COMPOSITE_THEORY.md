@@ -73,7 +73,7 @@ The `positionRGB / whiteLight` division is the core trick — it converts positi
 
 ## Screen Surface Mapping (Bonus)
 
-The position pass also gives you correct perspective mapping of the user's image onto the screen surface itself, for free: where the position pass shows non-zero values on the screen plane, those RGB values *are* the screen's UVs by construction. Sampling `userScreenContent` at `positionRGB.rg` for those pixels paints the user image onto the screen in correct perspective. This means a 4th pass (alpha mask of the screen) is optional, not required.
+The position pass also gives you correct perspective mapping of the user's image onto the screen surface itself, for free: where the position pass shows non-zero values on the screen plane, those RGB values _are_ the screen's UVs by construction. Sampling `userScreenContent` at `positionRGB.rg` for those pixels paints the user image onto the screen in correct perspective. This means a 4th pass (alpha mask of the screen) is optional, not required.
 
 ## Verification Step
 
@@ -99,9 +99,9 @@ If the position-pass technique produces artifacts (e.g. due to render noise in d
 
 ## Visibility Flag Reference
 
-| Setting | Effect |
-|---|---|
-| **Holdout** (Object Properties → Visibility) | Renders transparent alpha hole; object still affects light transport (blocks light, casts shadow). |
-| **Ray Visibility → Camera** (Cycles only) | Camera rays pass through; light still interacts normally. **Use this for Pass 1.** |
-| **Ray Visibility → Diffuse / Glossy / Transmission** | Controls bounce participation per ray type. |
-| **Ray Visibility → Shadow** | Controls shadow casting. |
+| Setting                                              | Effect                                                                                             |
+| ---------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| **Holdout** (Object Properties → Visibility)         | Renders transparent alpha hole; object still affects light transport (blocks light, casts shadow). |
+| **Ray Visibility → Camera** (Cycles only)            | Camera rays pass through; light still interacts normally. **Use this for Pass 1.**                 |
+| **Ray Visibility → Diffuse / Glossy / Transmission** | Controls bounce participation per ray type.                                                        |
+| **Ray Visibility → Shadow**                          | Controls shadow casting.                                                                           |
