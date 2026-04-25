@@ -49,7 +49,8 @@ void main() {
   vec2 emitterUv = position.rg / max(whitelight.r, WHITELIGHT_EPS);
   vec3 screenColor = texture(u_screen, emitterUv).rgb;
 
-  vec3 finalColor = beauty + u_scale * screenColor * whitelight;
+  float bounceMask = step(0.02, whitelight.r);
+  vec3 finalColor = beauty + bounceMask * u_scale * screenColor * whitelight;
   fragColor = vec4(finalColor, 1.0);
 }
 `;

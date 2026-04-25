@@ -89,6 +89,8 @@ function writeAtlasMeta(meta: AtlasMeta): void {
 
 const blenderRendersDir = process.env.BLENDER_RENDERS_DIR;
 
+console.log(`[assets] build starting — ${frameCount} frames @ ${fps}fps`);
+
 if (!blenderRendersDir) {
   console.warn(
     "[assets] BLENDER_RENDERS_DIR is not set — skipping atlas build. Site will run in fallback mode.",
@@ -201,6 +203,9 @@ for (let frameIndex = 1; frameIndex <= frameCount; frameIndex += 1) {
     process.exit(result.status ?? 1);
   }
   frameMosaicCount += 1;
+  if (frameMosaicCount % 16 === 0) {
+    console.log(`[assets] mosaic progress: ${frameMosaicCount}/${frameCount}`);
+  }
 }
 
 if (frameMosaicCount > 0) {
@@ -224,6 +229,7 @@ if (existsSync(atlasPath)) {
 }
 
 if (needsEncode) {
+  console.log(`[assets] encoding atlas with libx264 yuv420p crf 12 preset slower...`);
   const result = spawnSync(
     "ffmpeg",
     [
@@ -243,8 +249,10 @@ if (needsEncode) {
       "libx264",
       "-pix_fmt",
       "yuv420p",
+      "-preset",
+      "slower",
       "-crf",
-      "18",
+      "12",
       "-color_range",
       "pc",
       "-movflags",

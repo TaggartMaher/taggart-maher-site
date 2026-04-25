@@ -47,5 +47,5 @@ export function drawScreenContent(context: CanvasRenderingContext2D, elapsedMs: 
   context.font = `${Math.floor(height * 0.18)}px ui-sans-serif, system-ui, sans-serif`;
   context.textAlign = "center";
   context.textBaseline = "middle";
-  context.fillText(activeCorner.label, width / 2, height / 2);
+  context.fillText(activeCorner.label, activeCorner.x + width / 4, activeCorner.y + height / 4);
 }
