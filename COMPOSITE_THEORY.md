@@ -105,3 +105,31 @@ If the position-pass technique produces artifacts (e.g. due to render noise in d
 | **Ray Visibility → Camera** (Cycles only)            | Camera rays pass through; light still interacts normally. **Use this for Pass 1.**                 |
 | **Ray Visibility → Diffuse / Glossy / Transmission** | Controls bounce participation per ray type.                                                        |
 | **Ray Visibility → Shadow**                          | Controls shadow casting.                                                                           |
+
+## Project Naming Convention (.blend file)
+
+The pipeline is implemented via View Layers + Collections (no script). The names below are the source of truth — keep the .blend, this doc, and any tooling in sync.
+
+**Collections**
+
+| Collection      | Contents                                                  |
+| --------------- | --------------------------------------------------------- |
+| `Scene`         | Camera, walls, props — anything identical across passes.  |
+| `StaticLights`  | All non-screen lights (and any black-world stand-in).     |
+| `SceneBeauty`   | `SCREEN` — the parent / source-of-truth screen object.    |
+| `SceneWhite`    | `SCREEN_WHITE` — linked duplicate, white emission.        |
+| `ScenePosition` | `SCREEN_POSITION` — linked duplicate, UV-gradient emission. |
+
+`SCREEN_WHITE` and `SCREEN_POSITION` are Alt-D linked duplicates of `SCREEN` (shared mesh data) and parented to `SCREEN` so transforms propagate. Edit `SCREEN` only.
+
+**View Layers**
+
+| Layer        | Included collections                       |
+| ------------ | ------------------------------------------ |
+| `Beauty`     | `Scene`, `StaticLights`, `SceneBeauty`     |
+| `WhiteLight` | `Scene`, `SceneWhite`                      |
+| `Position`   | `Scene`, `ScenePosition`                   |
+
+Exclusion is done via the Outliner's **Exclude from View Layer** checkbox (per-view-layer), not the eye visibility icon.
+
+**Material slot gotcha.** Because the three screen objects share mesh data (Alt-D), material slots live on the mesh and are shared across all three. To give each object its own material, set the slot's link dropdown to **Object** (not Data), keep only one slot per object, and assign the per-pass material to that slot. If multiple slots remain, slot 0 wins on every face, so all three planes render whichever material is in slot 0.
