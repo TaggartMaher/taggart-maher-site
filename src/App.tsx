@@ -14,6 +14,7 @@ export function App() {
       <Compositor
         screenSourceCanvasRef={screenSourceCanvasRef}
         freezeFirstFrame={debugSettings.freezeFirstFrame}
+        screenBlurRadiusPx={debugSettings.screenBlurRadiusPx}
       />
       <ScreenOverlay
         settings={debugSettings}

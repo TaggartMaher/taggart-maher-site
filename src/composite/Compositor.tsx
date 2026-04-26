@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import { atlasPath } from "../config";
-import { fragmentShaderSource, vertexShaderSource } from "./shader";
+import { blurFragmentShaderSource, fragmentShaderSource, vertexShaderSource } from "./shader";
 
 interface CompositorProps {
   // Canvas providing the live screen-content image. The compositor
@@ -14,6 +14,10 @@ interface CompositorProps {
   // texture and shader uniforms keep updating so dragging the debug
   // square or swapping background still re-renders.
   freezeFirstFrame: boolean;
+  // Gaussian blur radius (in screen-texture pixels) applied to the
+  // screen-content image before it feeds the composite. 0 disables the
+  // blur passes and the composite samples the raw screen texture.
+  screenBlurRadiusPx: number;
 }
 
 function compileShader(gl: WebGL2RenderingContext, type: number, source: string): WebGLShader {
@@ -47,13 +51,21 @@ function linkProgram(
   return program;
 }
 
-export function Compositor({ screenSourceCanvasRef, freezeFirstFrame }: CompositorProps) {
+export function Compositor({
+  screenSourceCanvasRef,
+  freezeFirstFrame,
+  screenBlurRadiusPx,
+}: CompositorProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   // Mirror prop into a ref so the handleVideoReady callback inside the
   // mount-only setup effect can honor the latest freeze state without
   // re-running the WebGL teardown/rebuild path.
   const freezeFirstFrameRef = useRef(freezeFirstFrame);
+  // Mirror the blur radius into a ref for the same reason — the rAF render
+  // loop reads it each frame without forcing a context rebuild on change.
+  const screenBlurRadiusPxRef = useRef(screenBlurRadiusPx);
+  screenBlurRadiusPxRef.current = screenBlurRadiusPx;
 
   // React to the freeze toggle without tearing down the WebGL context:
   // pause/seek the video element directly, and let the rAF render loop
@@ -90,14 +102,22 @@ export function Compositor({ screenSourceCanvasRef, freezeFirstFrame }: Composit
 
     const vertexShader = compileShader(gl, gl.VERTEX_SHADER, vertexShaderSource);
     const fragmentShader = compileShader(gl, gl.FRAGMENT_SHADER, fragmentShaderSource);
+    const blurFragmentShader = compileShader(gl, gl.FRAGMENT_SHADER, blurFragmentShaderSource);
     const program = linkProgram(gl, vertexShader, fragmentShader);
+    const blurProgram = linkProgram(gl, vertexShader, blurFragmentShader);
     gl.deleteShader(vertexShader);
     gl.deleteShader(fragmentShader);
+    gl.deleteShader(blurFragmentShader);
 
-    const positionAttribLocation = gl.getAttribLocation(program, "a_position");
+    // Both vertex shaders declare a_position at layout location 0, so the
+    // single fullscreen-quad VAO below works for both programs.
+    const positionAttribLocation = 0;
     const atlasUniformLocation = gl.getUniformLocation(program, "u_atlas");
     const screenUniformLocation = gl.getUniformLocation(program, "u_screen");
     const scaleUniformLocation = gl.getUniformLocation(program, "u_scale");
+    const blurSourceUniformLocation = gl.getUniformLocation(blurProgram, "u_source");
+    const blurDirectionUniformLocation = gl.getUniformLocation(blurProgram, "u_direction");
+    const blurRadiusUniformLocation = gl.getUniformLocation(blurProgram, "u_radiusPx");
 
     const fullScreenQuadBuffer = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, fullScreenQuadBuffer);
@@ -127,6 +147,37 @@ export function Compositor({ screenSourceCanvasRef, freezeFirstFrame }: Composit
 
     const atlasTexture = makeTexture(0);
     const screenTexture = makeTexture(1);
+    // Ping-pong targets for the separable blur. The horizontal pass writes
+    // into `blurTextureA` from `screenTexture`; the vertical pass writes
+    // into `blurTextureB` from `blurTextureA`; the composite then samples
+    // `blurTextureB`. Both are sized to the screen source's dimensions on
+    // first use and resized when the source changes shape.
+    const blurTextureA = makeTexture(2);
+    const blurTextureB = makeTexture(3);
+    const blurFramebufferA = gl.createFramebuffer();
+    const blurFramebufferB = gl.createFramebuffer();
+    if (!blurFramebufferA || !blurFramebufferB) {
+      throw new Error("[compositor] gl.createFramebuffer returned null");
+    }
+    let blurTextureWidth = 0;
+    let blurTextureHeight = 0;
+    function ensureBlurTargetsSized(width: number, height: number): void {
+      if (!gl) return;
+      if (width === blurTextureWidth && height === blurTextureHeight) return;
+      blurTextureWidth = width;
+      blurTextureHeight = height;
+      for (const [unit, texture, framebuffer] of [
+        [2, blurTextureA, blurFramebufferA],
+        [3, blurTextureB, blurFramebufferB],
+      ] as const) {
+        gl.activeTexture(gl.TEXTURE0 + unit);
+        gl.bindTexture(gl.TEXTURE_2D, texture);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0);
+      }
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    }
 
     // Both video and 2D-canvas sources are top-left origin in the source
     // image, but WebGL textures default to bottom-left. Flip on upload so
@@ -194,12 +245,43 @@ export function Compositor({ screenSourceCanvasRef, freezeFirstFrame }: Composit
       gl.bindTexture(gl.TEXTURE_2D, screenTexture);
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, screenSource);
 
+      // Run the separable blur passes if the user has dialed in a non-zero
+      // radius. The two passes draw at the screen source's native size
+      // into the ping-pong FBOs; the composite below will then sample the
+      // final blurred result from texture unit 3 instead of unit 1.
+      const blurRadiusPx = Math.max(0, Math.floor(screenBlurRadiusPxRef.current));
+      const screenSourceWidth = screenSource.width;
+      const screenSourceHeight = screenSource.height;
+      const blurEnabled = blurRadiusPx > 0 && screenSourceWidth > 0 && screenSourceHeight > 0;
+      if (blurEnabled) {
+        ensureBlurTargetsSized(screenSourceWidth, screenSourceHeight);
+        gl.useProgram(blurProgram);
+        gl.bindVertexArray(vertexArrayObject);
+        gl.uniform1i(blurRadiusUniformLocation, blurRadiusPx);
+        gl.viewport(0, 0, screenSourceWidth, screenSourceHeight);
+
+        // Horizontal pass: screenTexture (unit 1) → blurFramebufferA.
+        gl.bindFramebuffer(gl.FRAMEBUFFER, blurFramebufferA);
+        gl.uniform1i(blurSourceUniformLocation, 1);
+        gl.uniform2f(blurDirectionUniformLocation, 1 / screenSourceWidth, 0);
+        gl.drawArrays(gl.TRIANGLES, 0, 6);
+
+        // Vertical pass: blurTextureA (unit 2) → blurFramebufferB.
+        gl.bindFramebuffer(gl.FRAMEBUFFER, blurFramebufferB);
+        gl.uniform1i(blurSourceUniformLocation, 2);
+        gl.uniform2f(blurDirectionUniformLocation, 0, 1 / screenSourceHeight);
+        gl.drawArrays(gl.TRIANGLES, 0, 6);
+
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+        gl.bindVertexArray(null);
+      }
+
       resizeCanvasToViewport();
 
       gl.useProgram(program);
       gl.bindVertexArray(vertexArrayObject);
       gl.uniform1i(atlasUniformLocation, 0);
-      gl.uniform1i(screenUniformLocation, 1);
+      gl.uniform1i(screenUniformLocation, blurEnabled ? 3 : 1);
       gl.uniform1f(scaleUniformLocation, atlasScale);
       gl.drawArrays(gl.TRIANGLES, 0, 6);
       gl.bindVertexArray(null);
@@ -249,9 +331,14 @@ export function Compositor({ screenSourceCanvasRef, freezeFirstFrame }: Composit
       }
       gl.deleteTexture(atlasTexture);
       gl.deleteTexture(screenTexture);
+      gl.deleteTexture(blurTextureA);
+      gl.deleteTexture(blurTextureB);
+      gl.deleteFramebuffer(blurFramebufferA);
+      gl.deleteFramebuffer(blurFramebufferB);
       gl.deleteBuffer(fullScreenQuadBuffer);
       gl.deleteVertexArray(vertexArrayObject);
       gl.deleteProgram(program);
+      gl.deleteProgram(blurProgram);
     };
   }, [screenSourceCanvasRef]);
 

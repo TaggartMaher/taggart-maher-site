@@ -61,6 +61,20 @@ export function DebugMenu({ settings, onChange }: DebugMenuProps) {
           />
           <span>Freeze first frame</span>
         </label>
+        <label className="debug-menu-row">
+          <span>Screen blur ({settings.screenBlurRadiusPx}px)</span>
+          <input
+            className="debug-menu-control"
+            type="range"
+            min={0}
+            max={64}
+            step={1}
+            value={settings.screenBlurRadiusPx}
+            onChange={(event) =>
+              onChange({ ...settings, screenBlurRadiusPx: Number(event.target.value) })
+            }
+          />
+        </label>
       </section>
 
       <section className="debug-menu-section">

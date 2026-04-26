@@ -27,6 +27,9 @@ export interface DebugSettings {
   // the square stays put while the user toggles other options.
   squareNormalizedX: number;
   squareNormalizedY: number;
+  // Gaussian blur radius applied to the screen-content image before it
+  // feeds the composite, in screen-texture pixels. 0 disables the blur.
+  screenBlurRadiusPx: number;
 }
 
 export const defaultDebugSettings: DebugSettings = {
@@ -40,4 +43,5 @@ export const defaultDebugSettings: DebugSettings = {
   squareColor: "#ff5500",
   squareNormalizedX: 0.4,
   squareNormalizedY: 0.4,
+  screenBlurRadiusPx: 0,
 };
