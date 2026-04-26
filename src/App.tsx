@@ -17,6 +17,10 @@ export function App() {
         screenSourceCanvasRef={screenSourceCanvasRef}
         freezeFirstFrame={debugSettings.freezeFirstFrame}
         screenBlurRadiusPx={debugSettings.screenBlurRadiusPx}
+        uStretch={debugSettings.uStretch}
+        vStretch={debugSettings.vStretch}
+        uOffset={debugSettings.uOffset}
+        vOffset={debugSettings.vOffset}
         perfMetricsRef={perfMetricsRef}
       />
       <ScreenOverlay

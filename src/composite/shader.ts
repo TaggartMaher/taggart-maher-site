@@ -85,6 +85,13 @@ out vec4 fragColor;
 uniform sampler2D u_atlas;
 uniform sampler2D u_screen;
 uniform float u_scale;
+// Per-axis linear stretch around (0.5, 0.5) applied to emitterUv before
+// sampling the screen texture. (1.0, 1.0) = no change. > 1 pushes that
+// axis's edges outward to compensate for residual nonlinearity at the
+// edges of the position pass.
+uniform vec2 u_uvStretch;
+// Per-axis translation added to emitterUv after the stretch.
+uniform vec2 u_uvOffset;
 
 const float PASS_WIDTH = 1.0 / 3.0;
 const float WHITELIGHT_EPS = 1.0e-3;
@@ -141,10 +148,10 @@ void main() {
     }
   }
   vec2 emitterUv = positionSum / max(whitelightSum, BLUR_TAP_COUNT * WHITELIGHT_EPS);
+  emitterUv = (emitterUv - 0.5) * u_uvStretch + 0.5 + u_uvOffset;
   vec3 screenColor = srgbToLinear(texture(u_screen, emitterUv).rgb);
 
-  float bounceMask = step(0.02, whitelight.r);
-  vec3 finalColor = beauty + bounceMask * u_scale * screenColor * whitelight;
+  vec3 finalColor = beauty + u_scale * screenColor * whitelight;
 
   // Reinhard tonemap: x / (1 + x). Compresses values >1 with a soft
   // knee so the bright bounce pool (often 3-5x in scene-referred

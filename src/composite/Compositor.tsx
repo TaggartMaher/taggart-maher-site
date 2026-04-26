@@ -19,6 +19,14 @@ interface CompositorProps {
   // screen-content image before it feeds the composite. 0 disables the
   // blur passes and the composite samples the raw screen texture.
   screenBlurRadiusPx: number;
+  // Per-axis linear stretch around (0.5, 0.5) applied to the emitter UV
+  // before sampling the screen content. 1.0 is the physical default;
+  // > 1 pushes that axis's edges outward.
+  uStretch: number;
+  vStretch: number;
+  // Per-axis translation added to emitterUv after the stretch.
+  uOffset: number;
+  vOffset: number;
   // Optional sink for per-frame performance metrics. The compositor
   // mutates the referenced object each frame; readers (the debug menu)
   // poll it on their own cadence so metric updates don't drive React
@@ -61,6 +69,10 @@ export function Compositor({
   screenSourceCanvasRef,
   freezeFirstFrame,
   screenBlurRadiusPx,
+  uStretch,
+  vStretch,
+  uOffset,
+  vOffset,
   perfMetricsRef,
 }: CompositorProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -73,6 +85,14 @@ export function Compositor({
   // loop reads it each frame without forcing a context rebuild on change.
   const screenBlurRadiusPxRef = useRef(screenBlurRadiusPx);
   screenBlurRadiusPxRef.current = screenBlurRadiusPx;
+  const uStretchRef = useRef(uStretch);
+  uStretchRef.current = uStretch;
+  const vStretchRef = useRef(vStretch);
+  vStretchRef.current = vStretch;
+  const uOffsetRef = useRef(uOffset);
+  uOffsetRef.current = uOffset;
+  const vOffsetRef = useRef(vOffset);
+  vOffsetRef.current = vOffset;
 
   // React to the freeze toggle without tearing down the WebGL context:
   // pause/seek the video element directly, and let the rAF render loop
@@ -122,6 +142,8 @@ export function Compositor({
     const atlasUniformLocation = gl.getUniformLocation(program, "u_atlas");
     const screenUniformLocation = gl.getUniformLocation(program, "u_screen");
     const scaleUniformLocation = gl.getUniformLocation(program, "u_scale");
+    const uvStretchUniformLocation = gl.getUniformLocation(program, "u_uvStretch");
+    const uvOffsetUniformLocation = gl.getUniformLocation(program, "u_uvOffset");
     const blurSourceUniformLocation = gl.getUniformLocation(blurProgram, "u_source");
     const blurDirectionUniformLocation = gl.getUniformLocation(blurProgram, "u_direction");
     const blurRadiusUniformLocation = gl.getUniformLocation(blurProgram, "u_radiusPx");
@@ -399,6 +421,8 @@ export function Compositor({
       gl.uniform1i(atlasUniformLocation, 0);
       gl.uniform1i(screenUniformLocation, blurEnabled ? 3 : 1);
       gl.uniform1f(scaleUniformLocation, atlasScale);
+      gl.uniform2f(uvStretchUniformLocation, uStretchRef.current, vStretchRef.current);
+      gl.uniform2f(uvOffsetUniformLocation, uOffsetRef.current, vOffsetRef.current);
       gl.drawArrays(gl.TRIANGLES, 0, 6);
       gl.bindVertexArray(null);
 

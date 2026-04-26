@@ -97,6 +97,54 @@ export function DebugMenu({ settings, onChange, perfMetricsRef }: DebugMenuProps
             }
           />
         </label>
+        <label className="debug-menu-row">
+          <span>U stretch ({settings.uStretch.toFixed(2)})</span>
+          <input
+            className="debug-menu-control"
+            type="range"
+            min={0.5}
+            max={1.5}
+            step={0.01}
+            value={settings.uStretch}
+            onChange={(event) => onChange({ ...settings, uStretch: Number(event.target.value) })}
+          />
+        </label>
+        <label className="debug-menu-row">
+          <span>V stretch ({settings.vStretch.toFixed(2)})</span>
+          <input
+            className="debug-menu-control"
+            type="range"
+            min={0.5}
+            max={1.5}
+            step={0.01}
+            value={settings.vStretch}
+            onChange={(event) => onChange({ ...settings, vStretch: Number(event.target.value) })}
+          />
+        </label>
+        <label className="debug-menu-row">
+          <span>U offset ({settings.uOffset.toFixed(2)})</span>
+          <input
+            className="debug-menu-control"
+            type="range"
+            min={-0.5}
+            max={0.5}
+            step={0.01}
+            value={settings.uOffset}
+            onChange={(event) => onChange({ ...settings, uOffset: Number(event.target.value) })}
+          />
+        </label>
+        <label className="debug-menu-row">
+          <span>V offset ({settings.vOffset.toFixed(2)})</span>
+          <input
+            className="debug-menu-control"
+            type="range"
+            min={-0.5}
+            max={0.5}
+            step={0.01}
+            value={settings.vOffset}
+            onChange={(event) => onChange({ ...settings, vOffset: Number(event.target.value) })}
+          />
+        </label>
       </section>
 
       <section className="debug-menu-section">
