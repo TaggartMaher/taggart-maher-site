@@ -242,7 +242,7 @@ export function ScreenOverlay({
   const squareSideFractionY =
     overlayRef.current && overlayRef.current.getBoundingClientRect().height > 0
       ? (SQUARE_FRACTION * overlayRef.current.getBoundingClientRect().width) /
-      overlayRef.current.getBoundingClientRect().height
+        overlayRef.current.getBoundingClientRect().height
       : SQUARE_FRACTION;
 
   const showImage = settings.imageBackgroundEnabled;

@@ -11,6 +11,11 @@ export interface DebugSettings {
   // backgrounds and the draggable square still render if their own
   // checkboxes are enabled.
   hidePageOverlay: boolean;
+  // When true, pause the atlas video on its first frame so iteration
+  // doesn't have to wait through the loop. Bounce light + the
+  // draggable square / image background still update live; only the
+  // beauty/whitelight/position passes freeze.
+  freezeFirstFrame: boolean;
   imageBackgroundEnabled: boolean;
   imageBackgroundUrl: string;
   colorBackgroundEnabled: boolean;
@@ -26,6 +31,7 @@ export interface DebugSettings {
 
 export const defaultDebugSettings: DebugSettings = {
   hidePageOverlay: false,
+  freezeFirstFrame: false,
   imageBackgroundEnabled: false,
   imageBackgroundUrl: testImages[0].url,
   colorBackgroundEnabled: false,

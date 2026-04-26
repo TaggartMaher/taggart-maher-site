@@ -53,6 +53,14 @@ export function DebugMenu({ settings, onChange }: DebugMenuProps) {
           />
           <span>Hide page overlay</span>
         </label>
+        <label className="debug-menu-row">
+          <input
+            type="checkbox"
+            checked={settings.freezeFirstFrame}
+            onChange={(event) => onChange({ ...settings, freezeFirstFrame: event.target.checked })}
+          />
+          <span>Freeze first frame</span>
+        </label>
       </section>
 
       <section className="debug-menu-section">

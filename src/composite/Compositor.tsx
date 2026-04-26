@@ -9,6 +9,11 @@ interface CompositorProps {
   // on the next frame. May start null and be assigned later — the
   // compositor waits for it before rendering.
   screenSourceCanvasRef: React.RefObject<HTMLCanvasElement | null>;
+  // When true, pause the atlas video on its first frame. Bounce
+  // (whitelight/position) is therefore static, but the screen-content
+  // texture and shader uniforms keep updating so dragging the debug
+  // square or swapping background still re-renders.
+  freezeFirstFrame: boolean;
 }
 
 function compileShader(gl: WebGL2RenderingContext, type: number, source: string): WebGLShader {
@@ -42,9 +47,35 @@ function linkProgram(
   return program;
 }
 
-export function Compositor({ screenSourceCanvasRef }: CompositorProps) {
+export function Compositor({ screenSourceCanvasRef, freezeFirstFrame }: CompositorProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  // Mirror prop into a ref so the handleVideoReady callback inside the
+  // mount-only setup effect can honor the latest freeze state without
+  // re-running the WebGL teardown/rebuild path.
+  const freezeFirstFrameRef = useRef(freezeFirstFrame);
+
+  // React to the freeze toggle without tearing down the WebGL context:
+  // pause/seek the video element directly, and let the rAF render loop
+  // keep uploading the current (paused) frame plus any screen-texture
+  // updates from the parent.
+  useEffect(() => {
+    freezeFirstFrameRef.current = freezeFirstFrame;
+    const video = videoRef.current;
+    if (!video) return;
+    if (freezeFirstFrame) {
+      video.pause();
+      try {
+        video.currentTime = 0;
+      } catch {
+        /* seeking before metadata loads throws — handled on loadedmetadata */
+      }
+    } else {
+      void video.play().catch(() => {
+        /* autoplay can be blocked; user gesture will recover it */
+      });
+    }
+  }, [freezeFirstFrame]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -111,7 +142,6 @@ export function Compositor({ screenSourceCanvasRef }: CompositorProps) {
     gl.pixelStorei(gl.UNPACK_COLORSPACE_CONVERSION_WEBGL, gl.NONE);
 
     let cancelled = false;
-    let videoFrameCallbackHandle: number | null = null;
     let animationFrameHandle: number | null = null;
 
     // The build pipeline pre-scales whitelight + position into [0,1] and
@@ -176,27 +206,32 @@ export function Compositor({ screenSourceCanvasRef }: CompositorProps) {
     }
 
     function scheduleNextFrame(): void {
-      if (cancelled || !video) return;
-      // requestVideoFrameCallback is in WHATWG and shipped in all majors,
-      // but check anyway since lib.dom typing doesn't reflect runtime
-      // availability on older user agents.
-      if ("requestVideoFrameCallback" in video) {
-        videoFrameCallbackHandle = video.requestVideoFrameCallback(() => {
-          renderFrame();
-          scheduleNextFrame();
-        });
-      } else {
-        animationFrameHandle = requestAnimationFrame(() => {
-          renderFrame();
-          scheduleNextFrame();
-        });
-      }
+      if (cancelled) return;
+      // Always use requestAnimationFrame: we need to keep rendering when
+      // the video is paused (freeze-first-frame mode) so screen-content
+      // texture edits — square drag, color picker, etc. — still hit the
+      // GPU. requestVideoFrameCallback would stop firing on pause and
+      // freeze the whole composite, including the bounce contribution
+      // from a moving square.
+      animationFrameHandle = requestAnimationFrame(() => {
+        renderFrame();
+        scheduleNextFrame();
+      });
     }
 
     function handleVideoReady(): void {
-      video!.play().catch((error) => {
-        console.warn("[compositor] video autoplay rejected:", error);
-      });
+      if (freezeFirstFrameRef.current) {
+        video!.pause();
+        try {
+          video!.currentTime = 0;
+        } catch {
+          /* ignore */
+        }
+      } else {
+        video!.play().catch((error) => {
+          console.warn("[compositor] video autoplay rejected:", error);
+        });
+      }
       scheduleNextFrame();
     }
 
@@ -209,9 +244,6 @@ export function Compositor({ screenSourceCanvasRef }: CompositorProps) {
     return () => {
       cancelled = true;
       video.removeEventListener("loadeddata", handleVideoReady);
-      if (videoFrameCallbackHandle !== null && "cancelVideoFrameCallback" in video) {
-        video.cancelVideoFrameCallback(videoFrameCallbackHandle);
-      }
       if (animationFrameHandle !== null) {
         cancelAnimationFrame(animationFrameHandle);
       }

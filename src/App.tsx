@@ -11,7 +11,10 @@ export function App() {
 
   return (
     <>
-      <Compositor screenSourceCanvasRef={screenSourceCanvasRef} />
+      <Compositor
+        screenSourceCanvasRef={screenSourceCanvasRef}
+        freezeFirstFrame={debugSettings.freezeFirstFrame}
+      />
       <ScreenOverlay
         settings={debugSettings}
         onSettingsChange={setDebugSettings}
