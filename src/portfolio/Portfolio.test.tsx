@@ -3,13 +3,17 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { Portfolio } from "./Portfolio";
 
 describe("Portfolio", () => {
-  it("renders the headline, all three section headings, and a contact link", () => {
+  it("renders the desktop chrome with branding, taskbar, and section icons", () => {
     const markup = renderToStaticMarkup(<Portfolio />);
 
-    expect(markup).toContain("Taggart Maher");
-    expect(markup).toContain(">About<");
-    expect(markup).toContain(">Projects<");
-    expect(markup).toContain(">Contact<");
-    expect(markup).toContain("mailto:taggart.maher@gmail.com");
+    // Taskbar branding and section icons identify the desktop shell.
+    expect(markup).toContain("tm-portfolio");
+    expect(markup).toContain("About Me");
+    expect(markup).toContain("Experience");
+    expect(markup).toContain("Projects");
+    expect(markup).toContain("Blog");
+    expect(markup).toContain("Mystery");
+    expect(markup).toContain("README.md");
+    expect(markup).toContain("Contact");
   });
 });

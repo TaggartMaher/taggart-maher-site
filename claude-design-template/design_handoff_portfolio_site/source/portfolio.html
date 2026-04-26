@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>tm-portfolio — Plasma Desktop</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Noto+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Noto+Serif:wght@400;500;700&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --bg: #1d2027;
+        --bg-2: #161920;
+        --panel: #23262e;
+        --panel-2: #2a2e38;
+        --panel-hover: #323743;
+        --border: #3a3f4b;
+        --border-soft: #2e333d;
+        --fg: #eff0f1;
+        --fg-2: #bcc1c7;
+        --fg-3: #7d828c;
+        --accent: #3daee9; /* Plasma's signature blue */
+        --accent-2: #1d99f3;
+        --accent-soft: rgba(61, 174, 233, 0.18);
+        --selection: rgba(61, 174, 233, 0.35);
+        --warn: #f67400;
+        --classified: #c0392b;
+        --shadow: 0 10px 40px rgba(0, 0, 0, 0.5), 0 2px 8px rgba(0, 0, 0, 0.3);
+        --wallpaper:
+          radial-gradient(1200px 700px at 75% -10%, rgba(61, 174, 233, 0.18), transparent 65%),
+          radial-gradient(900px 600px at 10% 110%, rgba(29, 153, 243, 0.1), transparent 60%),
+          linear-gradient(160deg, #1d2027 0%, #161920 60%, #0f1115 100%);
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        background: var(--bg);
+        color: var(--fg);
+        font-family: "Noto Sans", ui-sans-serif, system-ui, sans-serif;
+        font-size: 14px;
+        -webkit-font-smoothing: antialiased;
+        height: 100%;
+        overflow: hidden;
+      }
+      body {
+        background: var(--wallpaper);
+        background-attachment: fixed;
+      }
+      body::before {
+        content: "";
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        background: radial-gradient(circle at 50% 50%, transparent 0%, rgba(0, 0, 0, 0.25) 100%);
+      }
+      .mono {
+        font-family: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
+      }
+      .serif {
+        font-family: "Noto Serif", Georgia, serif;
+      }
+      ::selection {
+        background: var(--selection);
+        color: var(--fg);
+      }
+      ::-webkit-scrollbar {
+        width: 10px;
+        height: 10px;
+      }
+      ::-webkit-scrollbar-track {
+        background: transparent;
+      }
+      ::-webkit-scrollbar-thumb {
+        background: rgba(255, 255, 255, 0.1);
+        border-radius: 6px;
+        border: 2px solid transparent;
+        background-clip: content-box;
+      }
+      ::-webkit-scrollbar-thumb:hover {
+        background: rgba(255, 255, 255, 0.18);
+        border: 2px solid transparent;
+        background-clip: content-box;
+      }
+
+      #root {
+        position: relative;
+        width: 100vw;
+        height: 100vh;
+        overflow: hidden;
+      }
+    </style>
+
+    <script
+      src="https://unpkg.com/react@18.3.1/umd/react.development.js"
+      integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L"
+      crossorigin="anonymous"
+    ></script>
+    <script
+      src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js"
+      integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm"
+      crossorigin="anonymous"
+    ></script>
+    <script
+      src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js"
+      integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y"
+      crossorigin="anonymous"
+    ></script>
+  </head>
+  <body>
+    <div id="root"></div>
+
+    <script type="text/babel" src="tweaks-panel.jsx"></script>
+    <script type="text/babel" src="data.jsx"></script>
+    <script type="text/babel" src="window.jsx"></script>
+    <script type="text/babel" src="apps.jsx"></script>
+    <script type="text/babel" src="desktop.jsx"></script>
+  </body>
+</html>

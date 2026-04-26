@@ -9,14 +9,6 @@
   pointer-events: none;
 }
 
-.screen-overlay-content > .portfolio {
-  /* The Portfolio is sized for a normal page but lives inside the small
-     projected screen rect. Stretch it to fill the box vertically so the
-     screen isn't mostly empty white below short content. */
-  min-height: 100%;
-  box-sizing: border-box;
-}
-
 .screen-overlay-content,
 .screen-overlay-image,
 .screen-overlay-color {
