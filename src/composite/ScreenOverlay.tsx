@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef } from "react";
+import { detectHtmlInCanvasSupport } from "./htmlInCanvas";
 import { Portfolio } from "../portfolio/Portfolio";
 import { screenPlane, screenRect } from "../config";
 import type { DebugSettings } from "../debug/debugSettings";
@@ -81,6 +82,12 @@ export function ScreenOverlay({
   const overlayRef = useRef<HTMLDivElement | null>(null);
   const internalCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const loadedImageRef = useRef<{ url: string; image: HTMLImageElement } | null>(null);
+  // Mirror settings into a ref so the rAF rasterization loop can read
+  // the latest values (square pos, colors) without tearing down on
+  // every settings change — the loop only needs to restart when the
+  // background MODE switches.
+  const settingsRef = useRef(settings);
+  settingsRef.current = settings;
 
   // Allocate the texture canvas on mount and expose it via the parent ref.
   useLayoutEffect(() => {
@@ -101,9 +108,29 @@ export function ScreenOverlay({
     };
   }, [textureCanvasRef]);
 
-  // Redraw the texture canvas whenever the visible screen state changes.
-  // The "background" layer is one of: image, color, or rendered Portfolio
-  // DOM (default). The square layer is composited on top when enabled.
+  // One-time log if the user has Chrome's HTML-in-Canvas flag enabled —
+  // the compositor would benefit from `texElementImage2D`, but wiring
+  // it requires moving the Portfolio DOM into the compositor canvas.
+  useEffect(() => {
+    if (detectHtmlInCanvasSupport()) {
+      console.info(
+        "[overlay] HTML-in-Canvas (texElementImage2D) detected. Faster path " +
+          "available — currently using the foreignObject fallback. See " +
+          "src/composite/htmlInCanvas.ts.",
+      );
+    }
+  }, []);
+
+  // Drive the screen-content texture. Three modes:
+  //   - Image background: load once, paint once.
+  //   - Color background: paint once.
+  //   - Portfolio (default): rAF loop, single in-flight snapshot, so
+  //     the bounce-light texture tracks live UI changes (drag, focus,
+  //     window state) at whatever rate the foreignObject pipeline can
+  //     sustain.
+  // The square overlay is painted on top of whichever background is
+  // current — for the rAF mode that means it gets re-painted after
+  // each Portfolio snapshot.
   useEffect(() => {
     const canvas = internalCanvasRef.current;
     if (!canvas) return;
@@ -111,71 +138,95 @@ export function ScreenOverlay({
     if (!context) return;
 
     let cancelled = false;
+    let rafId = 0;
+    let rasterizing = false;
 
-    async function paint(): Promise<void> {
+    function paintSquare(): void {
       if (!canvas || !context) return;
+      const current = settingsRef.current;
+      if (!current.squareEnabled) return;
+      const sideInPixels = canvas.width * SQUARE_FRACTION;
+      const xInPixels = current.squareNormalizedX * canvas.width;
+      const yInPixels = current.squareNormalizedY * canvas.height;
+      context.fillStyle = current.squareColor;
+      context.fillRect(xInPixels, yInPixels, sideInPixels, sideInPixels);
+    }
 
-      // Background.
-      if (settings.imageBackgroundEnabled) {
-        let cached = loadedImageRef.current;
-        if (!cached || cached.url !== settings.imageBackgroundUrl) {
-          const image = new Image();
-          image.crossOrigin = "anonymous";
-          await new Promise<void>((resolve, reject) => {
-            image.onload = () => resolve();
-            image.onerror = () => reject(new Error("[overlay] background image failed to load"));
-            image.src = settings.imageBackgroundUrl;
-          });
-          if (cancelled) return;
-          cached = { url: settings.imageBackgroundUrl, image };
-          loadedImageRef.current = cached;
-        }
-        context.drawImage(cached.image, 0, 0, canvas.width, canvas.height);
-      } else if (!settings.colorBackgroundEnabled) {
-        // Default: render the live Portfolio DOM to the texture. We do
-        // this even when hidePageOverlay is on — the user wants to see
-        // the composite through the screen-rect area in the DOM, but
-        // the bounce light should still show a coherent image (and
-        // overlay layers like the draggable square should still work).
-        const source = portfolioContainerRef.current;
-        if (source) {
-          try {
-            await renderHtmlElementToCanvas(source, canvas);
-            if (cancelled) return;
-          } catch (error) {
-            console.warn("[overlay] failed to rasterize Portfolio DOM:", error);
-            context.fillStyle = "#fafafa";
-            context.fillRect(0, 0, canvas.width, canvas.height);
-          }
-        }
-      } else {
-        // colorBackgroundEnabled but not imageBackgroundEnabled — clear
-        // before painting the color so any prior content is gone.
-        context.clearRect(0, 0, canvas.width, canvas.height);
+    async function loadImageBackground(): Promise<void> {
+      if (!canvas || !context) return;
+      const current = settingsRef.current;
+      let cached = loadedImageRef.current;
+      if (!cached || cached.url !== current.imageBackgroundUrl) {
+        const image = new Image();
+        image.crossOrigin = "anonymous";
+        await new Promise<void>((resolve, reject) => {
+          image.onload = () => resolve();
+          image.onerror = () => reject(new Error("[overlay] background image failed to load"));
+          image.src = current.imageBackgroundUrl;
+        });
+        if (cancelled) return;
+        cached = { url: current.imageBackgroundUrl, image };
+        loadedImageRef.current = cached;
       }
+      context.drawImage(cached.image, 0, 0, canvas.width, canvas.height);
+    }
 
-      // Color background paints over image (if both enabled) or fills
-      // the canvas on its own.
-      if (settings.colorBackgroundEnabled) {
-        context.fillStyle = settings.colorBackgroundColor;
+    async function snapshotPortfolio(): Promise<void> {
+      if (rasterizing) return;
+      const source = portfolioContainerRef.current;
+      if (!source || !canvas) return;
+      rasterizing = true;
+      try {
+        await renderHtmlElementToCanvas(source, canvas);
+      } catch (error) {
+        if (!context) return;
+        console.warn("[overlay] failed to rasterize Portfolio DOM:", error);
+        context.fillStyle = "#fafafa";
         context.fillRect(0, 0, canvas.width, canvas.height);
-      }
-
-      // Draggable square on top.
-      if (settings.squareEnabled) {
-        const sideInPixels = canvas.width * SQUARE_FRACTION;
-        const xInPixels = settings.squareNormalizedX * canvas.width;
-        const yInPixels = settings.squareNormalizedY * canvas.height;
-        context.fillStyle = settings.squareColor;
-        context.fillRect(xInPixels, yInPixels, sideInPixels, sideInPixels);
+      } finally {
+        rasterizing = false;
       }
     }
 
-    void paint();
+    if (settings.imageBackgroundEnabled) {
+      void (async () => {
+        await loadImageBackground();
+        if (cancelled || !context) return;
+        if (settingsRef.current.colorBackgroundEnabled) {
+          context.fillStyle = settingsRef.current.colorBackgroundColor;
+          context.fillRect(0, 0, canvas.width, canvas.height);
+        }
+        paintSquare();
+      })();
+    } else if (settings.colorBackgroundEnabled) {
+      context.fillStyle = settings.colorBackgroundColor;
+      context.fillRect(0, 0, canvas.width, canvas.height);
+      paintSquare();
+    } else {
+      // Portfolio mode — drive a self-paced rAF loop. The next frame
+      // schedules only after the previous snapshot resolves, so we
+      // never queue more than one foreignObject decode at a time.
+      function tick(): void {
+        if (cancelled) return;
+        void snapshotPortfolio().then(() => {
+          if (cancelled) return;
+          paintSquare();
+          rafId = requestAnimationFrame(tick);
+        });
+      }
+      rafId = requestAnimationFrame(tick);
+    }
+
     return () => {
       cancelled = true;
+      if (rafId) cancelAnimationFrame(rafId);
     };
-  }, [settings]);
+  }, [
+    settings.imageBackgroundEnabled,
+    settings.imageBackgroundUrl,
+    settings.colorBackgroundEnabled,
+    settings.colorBackgroundColor,
+  ]);
 
   // Square drag handling — pointer-based so it works for mouse and touch.
   // Coordinates are converted to normalized [0, 1] relative to the overlay
