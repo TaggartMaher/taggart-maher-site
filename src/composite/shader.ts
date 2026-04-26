@@ -72,6 +72,16 @@ void main() {
 
   float bounceMask = step(0.02, whitelight.r);
   vec3 finalColor = beauty + bounceMask * u_scale * screenColor * whitelight;
+
+  // Reinhard tonemap: x / (1 + x). Compresses values >1 with a soft
+  // knee so the bright bounce pool (often 3-5x in scene-referred
+  // linear with E ~ 3.19) rolls off into the displayable range
+  // instead of clipping flat at 1.0. Beauty (already ≤1) passes
+  // through nearly unchanged. Per-channel keeps saturated colors
+  // saturated; switch to luminance-based if highlight desaturation
+  // becomes a goal.
+  finalColor = finalColor / (1.0 + finalColor);
+
   fragColor = vec4(linearToSrgb(finalColor), 1.0);
 }
 `;
