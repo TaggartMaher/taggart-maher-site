@@ -53,6 +53,13 @@ export interface DebugSettings {
   // contribution is zeroed instead of clamping to the texture edge — kills
   // the edge-pixel fill where the position pass overshoots the screen.
   edgeCutoff: number;
+  // Color adjustments applied to the screen-content sample (in linear
+  // light) before it multiplies into the bounce. 1.0 is a no-op for all
+  // three. Saturation lerps around Rec.709 luma; contrast scales around
+  // 0.5; brightness is a flat multiplier.
+  screenSaturation: number;
+  screenContrast: number;
+  screenBrightness: number;
 }
 
 export const defaultDebugSettings: DebugSettings = {
@@ -72,4 +79,7 @@ export const defaultDebugSettings: DebugSettings = {
   uOffset: 0,
   vOffset: 0,
   edgeCutoff: 0,
+  screenSaturation: 1,
+  screenContrast: 1,
+  screenBrightness: 1,
 };

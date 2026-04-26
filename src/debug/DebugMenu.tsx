@@ -157,6 +157,48 @@ export function DebugMenu({ settings, onChange, perfMetricsRef }: DebugMenuProps
             onChange={(event) => onChange({ ...settings, edgeCutoff: Number(event.target.value) })}
           />
         </label>
+        <label className="debug-menu-row">
+          <span>Saturation ({settings.screenSaturation.toFixed(2)})</span>
+          <input
+            className="debug-menu-control"
+            type="range"
+            min={0}
+            max={3}
+            step={0.01}
+            value={settings.screenSaturation}
+            onChange={(event) =>
+              onChange({ ...settings, screenSaturation: Number(event.target.value) })
+            }
+          />
+        </label>
+        <label className="debug-menu-row">
+          <span>Contrast ({settings.screenContrast.toFixed(2)})</span>
+          <input
+            className="debug-menu-control"
+            type="range"
+            min={0}
+            max={3}
+            step={0.01}
+            value={settings.screenContrast}
+            onChange={(event) =>
+              onChange({ ...settings, screenContrast: Number(event.target.value) })
+            }
+          />
+        </label>
+        <label className="debug-menu-row">
+          <span>Brightness ({settings.screenBrightness.toFixed(2)})</span>
+          <input
+            className="debug-menu-control"
+            type="range"
+            min={0}
+            max={3}
+            step={0.01}
+            value={settings.screenBrightness}
+            onChange={(event) =>
+              onChange({ ...settings, screenBrightness: Number(event.target.value) })
+            }
+          />
+        </label>
       </section>
 
       <section className="debug-menu-section">

@@ -22,6 +22,9 @@ export function App() {
         uOffset={debugSettings.uOffset}
         vOffset={debugSettings.vOffset}
         edgeCutoff={debugSettings.edgeCutoff}
+        screenSaturation={debugSettings.screenSaturation}
+        screenContrast={debugSettings.screenContrast}
+        screenBrightness={debugSettings.screenBrightness}
         perfMetricsRef={perfMetricsRef}
       />
       <ScreenOverlay

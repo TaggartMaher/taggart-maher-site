@@ -43,6 +43,11 @@ interface CompositorProps {
   vOffset: number;
   // Symmetric inset of the valid screen-content sampling window.
   edgeCutoff: number;
+  // Linear-light color adjustments applied to the screen-content sample
+  // before it multiplies into the bounce. 1.0 is the identity for each.
+  screenSaturation: number;
+  screenContrast: number;
+  screenBrightness: number;
   // Optional sink for per-frame performance metrics. The compositor
   // mutates the referenced object each frame; readers (the debug menu)
   // poll it on their own cadence so metric updates don't drive React
@@ -90,6 +95,9 @@ export function Compositor({
   uOffset,
   vOffset,
   edgeCutoff,
+  screenSaturation,
+  screenContrast,
+  screenBrightness,
   perfMetricsRef,
 }: CompositorProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -112,6 +120,12 @@ export function Compositor({
   vOffsetRef.current = vOffset;
   const edgeCutoffRef = useRef(edgeCutoff);
   edgeCutoffRef.current = edgeCutoff;
+  const screenSaturationRef = useRef(screenSaturation);
+  screenSaturationRef.current = screenSaturation;
+  const screenContrastRef = useRef(screenContrast);
+  screenContrastRef.current = screenContrast;
+  const screenBrightnessRef = useRef(screenBrightness);
+  screenBrightnessRef.current = screenBrightness;
 
   // React to the freeze toggle without tearing down the WebGL context:
   // pause/seek the video element directly, and let the rAF render loop
@@ -175,6 +189,9 @@ export function Compositor({
     const uvStretchUniformLocation = gl.getUniformLocation(program, "u_uvStretch");
     const uvOffsetUniformLocation = gl.getUniformLocation(program, "u_uvOffset");
     const edgeCutoffUniformLocation = gl.getUniformLocation(program, "u_edgeCutoff");
+    const screenSaturationUniformLocation = gl.getUniformLocation(program, "u_screenSaturation");
+    const screenContrastUniformLocation = gl.getUniformLocation(program, "u_screenContrast");
+    const screenBrightnessUniformLocation = gl.getUniformLocation(program, "u_screenBrightness");
     const downsampleSourceUniformLocation = gl.getUniformLocation(downsampleProgram, "u_source");
     const downsampleHalfPixelUniformLocation = gl.getUniformLocation(
       downsampleProgram,
@@ -552,6 +569,9 @@ export function Compositor({
       gl.uniform2f(uvStretchUniformLocation, uStretchRef.current, vStretchRef.current);
       gl.uniform2f(uvOffsetUniformLocation, uOffsetRef.current, vOffsetRef.current);
       gl.uniform1f(edgeCutoffUniformLocation, edgeCutoffRef.current);
+      gl.uniform1f(screenSaturationUniformLocation, screenSaturationRef.current);
+      gl.uniform1f(screenContrastUniformLocation, screenContrastRef.current);
+      gl.uniform1f(screenBrightnessUniformLocation, screenBrightnessRef.current);
       gl.drawArrays(gl.TRIANGLES, 0, 6);
       gl.bindVertexArray(null);
 

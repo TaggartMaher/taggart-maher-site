@@ -118,6 +118,12 @@ uniform vec2 u_uvOffset;
 // Symmetric inset of the valid screen-content sampling window. Zeroed
 // outside [edgeCutoff, 1 - edgeCutoff] on either axis.
 uniform float u_edgeCutoff;
+// Color adjustments applied to the screen-content sample in linear
+// light before it multiplies into the bounce. 1.0 is a no-op for all
+// three.
+uniform float u_screenSaturation;
+uniform float u_screenContrast;
+uniform float u_screenBrightness;
 
 const float PASS_WIDTH = 1.0 / 3.0;
 const float WHITELIGHT_EPS = 1.0e-3;
@@ -179,6 +185,16 @@ void main() {
                   step(emitterUv, vec2(1.0 - u_edgeCutoff));
   float screenMask = inWindow.x * inWindow.y;
   vec3 screenColor = srgbToLinear(texture(u_screen, emitterUv).rgb) * screenMask;
+
+  // Color adjustments in linear light, in saturation → contrast → brightness
+  // order. Saturation lerps from Rec.709 luma toward the original color (0
+  // = greyscale, 1 = unchanged, >1 boosts chroma). Contrast scales the
+  // signed deviation from a 0.5 mid-gray. Brightness is a flat multiplier.
+  float screenLuma = dot(screenColor, vec3(0.2126, 0.7152, 0.0722));
+  screenColor = mix(vec3(screenLuma), screenColor, u_screenSaturation);
+  screenColor = (screenColor - 0.5) * u_screenContrast + 0.5;
+  screenColor *= u_screenBrightness;
+  screenColor = max(screenColor, vec3(0.0));
 
   vec3 finalColor = beauty + u_scale * screenColor * whitelight;
 
