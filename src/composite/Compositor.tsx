@@ -95,6 +95,14 @@ export function Compositor() {
     // the position-pass UVs and screen-content sampling agree.
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
 
+    // Don't let the browser apply transfer-function conversions on upload.
+    // The atlas is sRGB-OETF-encoded by the build and the screen-content
+    // PNG is sRGB by definition; the shader does the EOTF explicitly via
+    // `srgbToLinear`. With BROWSER_DEFAULT, behavior varies across
+    // browsers — we'd see double-decoding or no decoding depending on the
+    // implementation. NONE makes the round-trip predictable.
+    gl.pixelStorei(gl.UNPACK_COLORSPACE_CONVERSION_WEBGL, gl.NONE);
+
     let cancelled = false;
     let videoFrameCallbackHandle: number | null = null;
     let animationFrameHandle: number | null = null;

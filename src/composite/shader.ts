@@ -37,20 +37,41 @@ uniform float u_scale;
 const float PASS_WIDTH = 1.0 / 3.0;
 const float WHITELIGHT_EPS = 1.0e-3;
 
+// Explicit sRGB <-> linear round-trip. The atlas is sRGB-OETF-encoded by
+// the build, and the screen-content PNG is sRGB-encoded by definition. We
+// upload both with UNPACK_COLORSPACE_CONVERSION_WEBGL=NONE so the browser
+// adds nothing on top, then linearize manually here. Composite math is
+// done in linear, then re-encoded with the sRGB OETF before writing to
+// fragColor (the canvas drawing buffer is treated as sRGB by the
+// browser).
+vec3 srgbToLinear(vec3 c) {
+  vec3 cutoff = vec3(0.04045);
+  vec3 hi = pow((c + 0.055) / 1.055, vec3(2.4));
+  vec3 lo = c / 12.92;
+  return mix(hi, lo, vec3(lessThan(c, cutoff)));
+}
+
+vec3 linearToSrgb(vec3 c) {
+  vec3 cutoff = vec3(0.0031308);
+  vec3 hi = 1.055 * pow(max(c, vec3(0.0)), vec3(1.0 / 2.4)) - 0.055;
+  vec3 lo = 12.92 * c;
+  return mix(hi, lo, vec3(lessThan(c, cutoff)));
+}
+
 void main() {
   vec2 beautyUv     = vec2(v_uv.x * PASS_WIDTH,                     v_uv.y);
   vec2 whitelightUv = vec2(v_uv.x * PASS_WIDTH + PASS_WIDTH,        v_uv.y);
   vec2 positionUv   = vec2(v_uv.x * PASS_WIDTH + 2.0 * PASS_WIDTH,  v_uv.y);
 
-  vec3 beauty     = texture(u_atlas, beautyUv).rgb;
-  vec3 whitelight = texture(u_atlas, whitelightUv).rgb;
-  vec3 position   = texture(u_atlas, positionUv).rgb;
+  vec3 beauty     = srgbToLinear(texture(u_atlas, beautyUv).rgb);
+  vec3 whitelight = srgbToLinear(texture(u_atlas, whitelightUv).rgb);
+  vec3 position   = srgbToLinear(texture(u_atlas, positionUv).rgb);
 
   vec2 emitterUv = position.rg / max(whitelight.r, WHITELIGHT_EPS);
-  vec3 screenColor = texture(u_screen, emitterUv).rgb;
+  vec3 screenColor = srgbToLinear(texture(u_screen, emitterUv).rgb);
 
   float bounceMask = step(0.02, whitelight.r);
   vec3 finalColor = beauty + bounceMask * u_scale * screenColor * whitelight;
-  fragColor = vec4(finalColor, 1.0);
+  fragColor = vec4(linearToSrgb(finalColor), 1.0);
 }
 `;

@@ -3,9 +3,12 @@
 // A single ffmpeg invocation reads the three EXR pass sequences (beauty,
 // whitelight, position) directly as float, pre-scales whitelight + position
 // by 1/E (the screen emission strength), mosaics the three passes
-// horizontally, applies the sRGB OETF so the values survive the decoder's
-// BT.709 EOTF round-trip, and encodes to public/composite/atlas.mp4 as
-// 8-bit H.264 yuv420p.
+// horizontally, applies the sRGB OETF (via zscale), and encodes to
+// public/composite/atlas.mp4 as 8-bit H.264 yuv420p. The OETF gives dark
+// values much more bit budget than linear 8-bit (linear byte 1 = 0.004
+// linear; sRGB byte 1 = 0.0003 linear). The shader undoes the OETF
+// explicitly with `srgbToLinear` rather than relying on the browser's
+// inconsistent video-texture color management.
 //
 // 4:2:0 yuv420p is the only chroma format that plays via `<video>` across
 // Chrome, Firefox, and Safari — system decoders (Media Foundation,
@@ -27,10 +30,10 @@
 // path at runtime. Asset build never fails the dev or production build.
 //
 // Tooling: requires ffmpeg built with libzimg (the `zscale` filter) for the
-// linear -> sRGB OETF conversion, and oiiotool for the one-shot scale
-// detection on the whitelight pass.
+// linear → sRGB OETF + BT.709 matrix conversion, and oiiotool for the
+// one-shot scale detection on the whitelight pass.
 
-import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
@@ -48,18 +51,19 @@ const atlasMetaPath = join(compositeDir, "atlasMeta.json");
 // fit in [0,1]; the shader multiplies the bounce contribution back by E so
 // `position / whitelight` (the emitter UV) keeps its full dynamic range.
 //
-// `encoding` records the OETF applied to the linear values before 8-bit
-// quantization. H.264 is invariably tagged BT.709, and any standards-
-// compliant decoder applies the BT.709 EOTF on display. We pre-encode with
-// sRGB (close enough to BT.709 OETF) so the round-trip cancels and the
-// shader receives linear values back. Bumping `encoding` invalidates the
-// atlas.
+// `encoding` records the transfer characteristic applied before 8-bit
+// quantization. We use sRGB OETF so dim bounce-light values survive 8-bit
+// quantization (linear 8-bit crushes anything below ~0.005 to byte 0; sRGB
+// 8-bit preserves down to ~0.0003). The shader applies `srgbToLinear`
+// explicitly when sampling the atlas, so the round-trip is self-contained
+// and not subject to whatever transfer the browser does or doesn't apply
+// on WebGL video upload. Bumping `encoding` invalidates the atlas.
 interface AtlasMeta {
   scale: number;
   encoding: string;
 }
 
-const atlasEncoding = "h264-420-srgb-v1";
+const atlasEncoding = "h264-420-srgb-v2";
 
 function detectAtlasScale(rendersDir: string): number {
   const sampleFrame = join(rendersDir, "whitelight", "whitelight-0001.exr");
@@ -173,14 +177,14 @@ if (needsEncode) {
 
   // Filter graph: read each pass as planar float RGB. whitelight + position
   // get multiplied by 1/scale via colorchannelmixer (operates on float).
-  // hstack the three passes into a 3x-wide float frame, apply the sRGB OETF
-  // via zscale, then convert to yuv420p for libx264.
+  // hstack the three passes into a 3x-wide float frame, apply the sRGB
+  // OETF and BT.709 matrix via zscale, then convert to yuv420p for libx264.
   const channelScale = `colorchannelmixer=rr=${inverseScale}:gg=${inverseScale}:bb=${inverseScale}`;
   const filterGraph = [
     `[0:v]format=gbrpf32le[beauty]`,
     `[1:v]format=gbrpf32le,${channelScale}[whitelight]`,
     `[2:v]format=gbrpf32le,${channelScale}[position]`,
-    `[beauty][whitelight][position]hstack=inputs=3,zscale=tin=linear:t=iec61966-2-1,format=yuv420p[out]`,
+    `[beauty][whitelight][position]hstack=inputs=3,zscale=tin=linear:t=iec61966-2-1:m=709,format=yuv420p[out]`,
   ].join(";");
 
   const result = spawnSync(
@@ -225,7 +229,7 @@ if (needsEncode) {
       "-color_primaries",
       "bt709",
       "-color_trc",
-      "bt709",
+      "iec61966-2-1",
       "-colorspace",
       "bt709",
       "-movflags",

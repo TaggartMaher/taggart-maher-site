@@ -70,7 +70,7 @@ Passes 2 and 3 MUST be saved in linear/raw color space. The position pass values
 - Output → Color Management → **View Transform: Standard** (or **Raw** if available), **Look: None**.
 - For OpenEXR, color space should be **Linear / Non-Color**.
 
-The build pipeline (`scripts/buildAssets.ts`, agent side) handles all subsequent encoding into the H.264 atlas: pre-scaling by emission strength, sRGB OETF for the BT.709 round-trip, atlas mosaic, ffmpeg encode. The Blender side never needs to think about gamma or 8-bit clipping — keep EXR linear and let the build do the rest.
+The build pipeline (`scripts/buildAssets.ts`, agent side) handles all subsequent encoding into the H.264 atlas: pre-scaling by emission strength, sRGB OETF (for dark-value precision), atlas mosaic, ffmpeg encode. The shader undoes the OETF explicitly. The Blender side never needs to think about gamma or 8-bit clipping — keep EXR linear and let the build do the rest.
 
 ## Compositor Math (WebGL Shader)
 
@@ -109,7 +109,7 @@ Currently configured at 96 frames @ 24fps (≈4-second loop). Frame count and fp
 
 The three passes are packed into one wide atlas video (3× width) so a single `<video>` element keeps all passes frame-locked.
 
-**Delivery format — resolved.** Single H.264 atlas at `crf 18`, with build-side pre-scaling and sRGB OETF. See `INIT.md` "Assets" section for the full pipeline. Shipped, working — chroma subsampling artifacts on the position pass have not been a problem in practice. Image-sequence delivery (KTX2 etc.) is the fallback if quality demands it later, but the move would be reactive rather than speculative.
+**Delivery format — resolved.** Single H.264 atlas at `crf 18`, with build-side pre-scaling and sRGB OETF (undone explicitly in the shader). See `INIT.md` "Assets" section for the full pipeline. Shipped, working — chroma subsampling artifacts on the position pass have not been a problem in practice. Image-sequence delivery (KTX2 etc.) is the fallback if quality demands it later, but the move would be reactive rather than speculative.
 
 ## Build pipeline lessons (linear → web)
 
@@ -119,9 +119,9 @@ Discovered iteratively while shipping. Read this before changing anything in `sc
 2. **Emission strength `E` exceeds 1.0** in linear EXR for both whitelight (the screen surface emits at `E`) and position (`UV * E`, with UV up to 1). 8-bit PNG quantization clips at 1.0, so a naive `oiiotool -d uint8` saturates most of the screen surface to a single corner sample. The build pipeline detects `E` from `whitelight-0001.exr`'s max channel value and divides whitelight + position by `E` before quantization. Beauty is untouched (its values are well under 1).
 3. **The `position / whitelight` ratio is invariant under uniform pre-scaling.** Dividing both passes by the same `E` preserves the emitter UV exactly while keeping values in `[0, 1]`.
 4. **The shader recovers magnitude with `u_scale = E`.** Stored bounce contribution is `screenColor * (whitelight/E)`, so `u_scale * screenColor * stored_whitelight = screenColor * whitelight` — the original scene-referred bounce.
-5. **Apply sRGB OETF before 8-bit quantization.** H.264 is invariably tagged BT.709, and standards-compliant decoders apply the BT.709 EOTF on display (browser, desktop video player, anything). Without an OETF on encode, linear values get gamma-decoded a second time and crush mid-tones — bounce light disappears. The fix is `oiiotool --colorconvert linear sRGB` before `-d uint8`. The H.264 round-trip is then linear → sRGB-encoded PNG → BT.709-tagged H.264 → BT.709 EOTF in decoder → linear back in the shader.
-6. **`UNPACK_COLORSPACE_CONVERSION_WEBGL = BROWSER_DEFAULT`**, deliberately. The browser is the one applying the EOTF on the WebGL video upload that completes the round-trip from #5. Setting it to `NONE` skips the EOTF and produces washed-out output.
-7. **Cache invalidation includes `encoding`.** Bumping the encoding string in `buildAssets.ts` (e.g. when the OETF strategy changes) forces all PNGs to rebuild. Mtime alone won't catch a pipeline-version change.
+5. **Apply sRGB OETF in the build; undo it explicitly in the shader.** Two earlier iterations got this wrong. First, the build encoded sRGB and trusted the browser's `<video>` → `texImage2D` path to apply the inverse — it doesn't, reliably, so `position.rg` came through ~30% high in midtones and crushed the test image into the bottom-left of the screen plane. Second, we swung the other way and went fully linear in the build, hoping to skip transfer functions altogether — but 8-bit linear quantization is wasteful in dark values (anything below ~0.005 linear rounds to byte 0), so the wall bounce died in a hard circle around the screen instead of falling off softly across the room. The working approach is the explicit one: build does `zscale=tin=linear:t=iec61966-2-1:m=709` and tags the file `color_trc=iec61966-2-1`, the shader calls `srgbToLinear` on every atlas read so math runs in linear, and `linearToSrgb` is applied to `fragColor` at the end since the canvas drawing buffer is treated as sRGB by the browser. The screen-content PNG goes through the same `srgbToLinear` because PNGs are sRGB by definition.
+6. **`UNPACK_COLORSPACE_CONVERSION_WEBGL = NONE`**, deliberately. With BROWSER_DEFAULT the browser may or may not apply transfer-function conversion on upload (Chrome, Firefox, and Safari disagree). NONE pins the behavior so the shader's explicit `srgbToLinear` is the only EOTF in play. UNPACK_FLIP_Y_WEBGL stays `true` — that one _is_ reliable across browsers and the math depends on it.
+7. **Cache invalidation includes `encoding`.** Bumping the encoding string in `buildAssets.ts` (e.g. when the transfer strategy changes) forces a rebuild. Mtime alone won't catch a pipeline-version change.
 
 ## How to verify a build round-trip
 
