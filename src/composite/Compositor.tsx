@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { atlasPath } from "../config";
+import type { PerfMetrics } from "./perfMetrics";
 import { blurFragmentShaderSource, fragmentShaderSource, vertexShaderSource } from "./shader";
 
 interface CompositorProps {
@@ -18,6 +19,11 @@ interface CompositorProps {
   // screen-content image before it feeds the composite. 0 disables the
   // blur passes and the composite samples the raw screen texture.
   screenBlurRadiusPx: number;
+  // Optional sink for per-frame performance metrics. The compositor
+  // mutates the referenced object each frame; readers (the debug menu)
+  // poll it on their own cadence so metric updates don't drive React
+  // renders here.
+  perfMetricsRef?: React.RefObject<PerfMetrics>;
 }
 
 function compileShader(gl: WebGL2RenderingContext, type: number, source: string): WebGLShader {
@@ -55,6 +61,7 @@ export function Compositor({
   screenSourceCanvasRef,
   freezeFirstFrame,
   screenBlurRadiusPx,
+  perfMetricsRef,
 }: CompositorProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -195,6 +202,74 @@ export function Compositor({
     let cancelled = false;
     let animationFrameHandle: number | null = null;
 
+    // Perf instrumentation. The render loop updates these scalars each
+    // frame and writes a smoothed snapshot into perfMetricsRef so the
+    // debug menu (or any other reader) can poll without coupling to the
+    // render cadence.
+    //
+    // - displayFps: derived from rAF callback timestamps.
+    // - videoFps: derived from HTMLVideoElement.getVideoPlaybackQuality()
+    //   deltas — i.e., decoded video frames per wall-clock second. Goes
+    //   to 0 when the video is paused.
+    // - cpuFrameMs: time spent inside renderFrame on the JS thread.
+    // - gpuFrameMs: TIME_ELAPSED_EXT timer query encompassing all GL
+    //   work for the frame. Resolves asynchronously a few frames later;
+    //   reported as null when the extension isn't available.
+    const timerQueryExtension = gl.getExtension("EXT_disjoint_timer_query_webgl2");
+    const pendingTimerQueries: WebGLQuery[] = [];
+    const exponentialAverageAlpha = 0.1;
+    let cpuFrameMsAverage = 0;
+    let gpuFrameMsAverage: number | null = timerQueryExtension ? 0 : null;
+    const recentFrameTimestamps: number[] = [];
+    const recentFrameTimestampsCapacity = 60;
+    let lastVideoQualitySampleTime = 0;
+    let lastVideoQualityFrameCount = 0;
+    let videoFpsAverage = 0;
+
+    function publishPerfMetrics(): void {
+      if (!perfMetricsRef?.current) return;
+      let displayFps = 0;
+      if (recentFrameTimestamps.length >= 2) {
+        const oldest = recentFrameTimestamps[0];
+        const newest = recentFrameTimestamps[recentFrameTimestamps.length - 1];
+        const elapsedSeconds = (newest - oldest) / 1000;
+        if (elapsedSeconds > 0) {
+          displayFps = (recentFrameTimestamps.length - 1) / elapsedSeconds;
+        }
+      }
+      perfMetricsRef.current.displayFps = displayFps;
+      perfMetricsRef.current.videoFps = videoFpsAverage;
+      perfMetricsRef.current.cpuFrameMs = cpuFrameMsAverage;
+      perfMetricsRef.current.gpuFrameMs = gpuFrameMsAverage;
+    }
+
+    function drainCompletedTimerQueries(): void {
+      if (!gl || !timerQueryExtension) return;
+      // Per the extension spec, results from any TIME_ELAPSED query that
+      // straddled a GPU disjoint event are unreliable; throw the whole
+      // pending batch away when we see one rather than report nonsense.
+      const disjoint = gl.getParameter(timerQueryExtension.GPU_DISJOINT_EXT);
+      if (disjoint) {
+        for (const query of pendingTimerQueries) gl.deleteQuery(query);
+        pendingTimerQueries.length = 0;
+        return;
+      }
+      while (pendingTimerQueries.length > 0) {
+        const query = pendingTimerQueries[0];
+        const available = gl.getQueryParameter(query, gl.QUERY_RESULT_AVAILABLE);
+        if (!available) break;
+        const elapsedNanoseconds = gl.getQueryParameter(query, gl.QUERY_RESULT) as number;
+        const elapsedMs = elapsedNanoseconds / 1e6;
+        gpuFrameMsAverage =
+          gpuFrameMsAverage === null || gpuFrameMsAverage === 0
+            ? elapsedMs
+            : gpuFrameMsAverage * (1 - exponentialAverageAlpha) +
+              elapsedMs * exponentialAverageAlpha;
+        gl.deleteQuery(query);
+        pendingTimerQueries.shift();
+      }
+    }
+
     // The build pipeline pre-scales whitelight + position into [0,1] and
     // writes the scale factor here. Until the metadata arrives we render
     // with scale = 1 (visible scene, no bounce magnitude correction).
@@ -228,6 +303,47 @@ export function Compositor({
 
     function renderFrame(): void {
       if (cancelled || !gl || !canvas || !video) return;
+
+      const cpuStartMs = performance.now();
+      recentFrameTimestamps.push(cpuStartMs);
+      if (recentFrameTimestamps.length > recentFrameTimestampsCapacity) {
+        recentFrameTimestamps.shift();
+      }
+
+      // Sample video decode rate roughly twice a second. The browser
+      // exposes a monotonic decoded-frame counter; differencing it over
+      // wall-clock gives us the actual atlas FPS independent of the rAF
+      // cadence (which can run faster than the video).
+      const playbackQuality = video.getVideoPlaybackQuality?.();
+      if (playbackQuality) {
+        if (lastVideoQualitySampleTime === 0) {
+          lastVideoQualitySampleTime = cpuStartMs;
+          lastVideoQualityFrameCount = playbackQuality.totalVideoFrames;
+        } else {
+          const elapsedSeconds = (cpuStartMs - lastVideoQualitySampleTime) / 1000;
+          if (elapsedSeconds >= 0.5) {
+            const decodedFrameDelta = playbackQuality.totalVideoFrames - lastVideoQualityFrameCount;
+            const sampleFps = decodedFrameDelta / elapsedSeconds;
+            videoFpsAverage =
+              videoFpsAverage === 0
+                ? sampleFps
+                : videoFpsAverage * (1 - exponentialAverageAlpha) +
+                  sampleFps * exponentialAverageAlpha;
+            lastVideoQualitySampleTime = cpuStartMs;
+            lastVideoQualityFrameCount = playbackQuality.totalVideoFrames;
+          }
+        }
+      }
+
+      drainCompletedTimerQueries();
+
+      let activeTimerQuery: WebGLQuery | null = null;
+      if (timerQueryExtension) {
+        activeTimerQuery = gl.createQuery();
+        if (activeTimerQuery) {
+          gl.beginQuery(timerQueryExtension.TIME_ELAPSED_EXT, activeTimerQuery);
+        }
+      }
 
       // Upload atlas frame from the current video frame.
       if (video.readyState >= video.HAVE_CURRENT_DATA) {
@@ -285,6 +401,20 @@ export function Compositor({
       gl.uniform1f(scaleUniformLocation, atlasScale);
       gl.drawArrays(gl.TRIANGLES, 0, 6);
       gl.bindVertexArray(null);
+
+      if (timerQueryExtension && activeTimerQuery) {
+        gl.endQuery(timerQueryExtension.TIME_ELAPSED_EXT);
+        pendingTimerQueries.push(activeTimerQuery);
+      }
+
+      const cpuFrameMsSample = performance.now() - cpuStartMs;
+      cpuFrameMsAverage =
+        cpuFrameMsAverage === 0
+          ? cpuFrameMsSample
+          : cpuFrameMsAverage * (1 - exponentialAverageAlpha) +
+            cpuFrameMsSample * exponentialAverageAlpha;
+
+      publishPerfMetrics();
     }
 
     function scheduleNextFrame(): void {
@@ -339,8 +469,9 @@ export function Compositor({
       gl.deleteVertexArray(vertexArrayObject);
       gl.deleteProgram(program);
       gl.deleteProgram(blurProgram);
+      for (const query of pendingTimerQueries) gl.deleteQuery(query);
     };
-  }, [screenSourceCanvasRef]);
+  }, [screenSourceCanvasRef, perfMetricsRef]);
 
   return (
     <>

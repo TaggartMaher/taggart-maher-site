@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import type { PerfMetrics } from "../composite/perfMetrics";
 import { testImages } from "../composite/testImages";
 import type { DebugSettings } from "./debugSettings";
 import "./debugMenu.css";
@@ -6,10 +7,23 @@ import "./debugMenu.css";
 interface DebugMenuProps {
   settings: DebugSettings;
   onChange: (next: DebugSettings) => void;
+  // Live perf snapshot mutated by the compositor each frame. The menu
+  // polls it on its own cadence (only while open) so the high-frequency
+  // updates don't drive React renders elsewhere.
+  perfMetricsRef: React.RefObject<PerfMetrics>;
 }
 
-export function DebugMenu({ settings, onChange }: DebugMenuProps) {
+export function DebugMenu({ settings, onChange, perfMetricsRef }: DebugMenuProps) {
   const [open, setOpen] = useState(false);
+  const [perfTick, setPerfTick] = useState(0);
+
+  // Poll the perf ref ~5 Hz while the menu is open. Closed → no timer,
+  // no readouts, no incidental work.
+  useEffect(() => {
+    if (!open) return;
+    const intervalId = window.setInterval(() => setPerfTick((tick) => tick + 1), 200);
+    return () => window.clearInterval(intervalId);
+  }, [open]);
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent): void {
@@ -29,6 +43,14 @@ export function DebugMenu({ settings, onChange }: DebugMenuProps) {
   }, []);
 
   if (!open) return null;
+
+  // Touch perfTick so the linter doesn't strip the state read; the value
+  // itself isn't used — re-running this render is the whole point.
+  void perfTick;
+  const perf = perfMetricsRef.current;
+  const formatFps = (value: number): string => (value > 0 ? value.toFixed(1) : "—");
+  const formatMs = (value: number | null): string =>
+    value === null ? "n/a" : value > 0 ? `${value.toFixed(2)} ms` : "—";
 
   return (
     <div className="debug-menu" role="dialog" aria-label="Debug menu">
@@ -143,6 +165,25 @@ export function DebugMenu({ settings, onChange }: DebugMenuProps) {
             onChange={(event) => onChange({ ...settings, squareColor: event.target.value })}
           />
         )}
+      </section>
+
+      <section className="debug-menu-section">
+        <div className="debug-menu-row">
+          <span>Display FPS</span>
+          <span>{formatFps(perf.displayFps)}</span>
+        </div>
+        <div className="debug-menu-row">
+          <span>Video FPS</span>
+          <span>{formatFps(perf.videoFps)}</span>
+        </div>
+        <div className="debug-menu-row">
+          <span>CPU / frame</span>
+          <span>{formatMs(perf.cpuFrameMs)}</span>
+        </div>
+        <div className="debug-menu-row">
+          <span>GPU / frame</span>
+          <span>{formatMs(perf.gpuFrameMs)}</span>
+        </div>
       </section>
 
       <footer className="debug-menu-footer">` to toggle</footer>
