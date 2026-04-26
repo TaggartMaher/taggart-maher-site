@@ -27,8 +27,9 @@ export interface DebugSettings {
   // the square stays put while the user toggles other options.
   squareNormalizedX: number;
   squareNormalizedY: number;
-  // Gaussian blur radius applied to the screen-content image before it
-  // feeds the composite, in screen-texture pixels. 0 disables the blur.
+  // Effective blur radius applied to the screen-content image before it
+  // feeds the composite, in screen-texture pixels, via a dual-Kawase
+  // downsample/upsample chain. 0 disables the blur.
   screenBlurRadiusPx: number;
   // Linear stretch applied to emitterUv around (0.5, 0.5) before sampling
   // the screen content, per axis:

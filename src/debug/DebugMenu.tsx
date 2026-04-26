@@ -89,7 +89,7 @@ export function DebugMenu({ settings, onChange, perfMetricsRef }: DebugMenuProps
             className="debug-menu-control"
             type="range"
             min={0}
-            max={64}
+            max={512}
             step={1}
             value={settings.screenBlurRadiusPx}
             onChange={(event) =>

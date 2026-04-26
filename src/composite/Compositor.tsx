@@ -1,7 +1,19 @@
 import { useEffect, useRef } from "react";
 import { atlasPath } from "../config";
 import type { PerfMetrics } from "./perfMetrics";
-import { blurFragmentShaderSource, fragmentShaderSource, vertexShaderSource } from "./shader";
+import {
+  downsampleFragmentShaderSource,
+  fragmentShaderSource,
+  upsampleFragmentShaderSource,
+  vertexShaderSource,
+} from "./shader";
+
+// Maximum depth of the dual-Kawase chain. Each level halves resolution per
+// axis, so MAX_BLUR_CHAIN_DEPTH = 6 means the deepest level is 1/64th of
+// the source's edge length and 1/4096th of its area — plenty of headroom
+// for very large effective radii without burning memory on a level we'll
+// never use.
+const MAX_BLUR_CHAIN_DEPTH = 6;
 
 interface CompositorProps {
   // Canvas providing the live screen-content image. The compositor
@@ -15,9 +27,11 @@ interface CompositorProps {
   // texture and shader uniforms keep updating so dragging the debug
   // square or swapping background still re-renders.
   freezeFirstFrame: boolean;
-  // Gaussian blur radius (in screen-texture pixels) applied to the
-  // screen-content image before it feeds the composite. 0 disables the
-  // blur passes and the composite samples the raw screen texture.
+  // Effective blur radius (in screen-texture pixels) applied to the
+  // screen-content image before it feeds the composite, via a dual-Kawase
+  // downsample/upsample chain. 0 disables the blur passes and the
+  // composite samples the raw screen texture. The host maps the radius to
+  // a chain depth and a final-pass kernel offset.
   screenBlurRadiusPx: number;
   // Per-axis linear stretch around (0.5, 0.5) applied to the emitter UV
   // before sampling the screen content. 1.0 is the physical default;
@@ -134,15 +148,26 @@ export function Compositor({
 
     const vertexShader = compileShader(gl, gl.VERTEX_SHADER, vertexShaderSource);
     const fragmentShader = compileShader(gl, gl.FRAGMENT_SHADER, fragmentShaderSource);
-    const blurFragmentShader = compileShader(gl, gl.FRAGMENT_SHADER, blurFragmentShaderSource);
+    const downsampleFragmentShader = compileShader(
+      gl,
+      gl.FRAGMENT_SHADER,
+      downsampleFragmentShaderSource,
+    );
+    const upsampleFragmentShader = compileShader(
+      gl,
+      gl.FRAGMENT_SHADER,
+      upsampleFragmentShaderSource,
+    );
     const program = linkProgram(gl, vertexShader, fragmentShader);
-    const blurProgram = linkProgram(gl, vertexShader, blurFragmentShader);
+    const downsampleProgram = linkProgram(gl, vertexShader, downsampleFragmentShader);
+    const upsampleProgram = linkProgram(gl, vertexShader, upsampleFragmentShader);
     gl.deleteShader(vertexShader);
     gl.deleteShader(fragmentShader);
-    gl.deleteShader(blurFragmentShader);
+    gl.deleteShader(downsampleFragmentShader);
+    gl.deleteShader(upsampleFragmentShader);
 
-    // Both vertex shaders declare a_position at layout location 0, so the
-    // single fullscreen-quad VAO below works for both programs.
+    // All three vertex shaders declare a_position at layout location 0,
+    // so the single fullscreen-quad VAO below works for every program.
     const positionAttribLocation = 0;
     const atlasUniformLocation = gl.getUniformLocation(program, "u_atlas");
     const screenUniformLocation = gl.getUniformLocation(program, "u_screen");
@@ -150,9 +175,15 @@ export function Compositor({
     const uvStretchUniformLocation = gl.getUniformLocation(program, "u_uvStretch");
     const uvOffsetUniformLocation = gl.getUniformLocation(program, "u_uvOffset");
     const edgeCutoffUniformLocation = gl.getUniformLocation(program, "u_edgeCutoff");
-    const blurSourceUniformLocation = gl.getUniformLocation(blurProgram, "u_source");
-    const blurDirectionUniformLocation = gl.getUniformLocation(blurProgram, "u_direction");
-    const blurRadiusUniformLocation = gl.getUniformLocation(blurProgram, "u_radiusPx");
+    const downsampleSourceUniformLocation = gl.getUniformLocation(downsampleProgram, "u_source");
+    const downsampleHalfPixelUniformLocation = gl.getUniformLocation(
+      downsampleProgram,
+      "u_halfPixel",
+    );
+    const downsampleOffsetUniformLocation = gl.getUniformLocation(downsampleProgram, "u_offset");
+    const upsampleSourceUniformLocation = gl.getUniformLocation(upsampleProgram, "u_source");
+    const upsampleHalfPixelUniformLocation = gl.getUniformLocation(upsampleProgram, "u_halfPixel");
+    const upsampleOffsetUniformLocation = gl.getUniformLocation(upsampleProgram, "u_offset");
 
     const fullScreenQuadBuffer = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, fullScreenQuadBuffer);
@@ -182,36 +213,84 @@ export function Compositor({
 
     const atlasTexture = makeTexture(0);
     const screenTexture = makeTexture(1);
-    // Ping-pong targets for the separable blur. The horizontal pass writes
-    // into `blurTextureA` from `screenTexture`; the vertical pass writes
-    // into `blurTextureB` from `blurTextureA`; the composite then samples
-    // `blurTextureB`. Both are sized to the screen source's dimensions on
-    // first use and resized when the source changes shape.
-    const blurTextureA = makeTexture(2);
-    const blurTextureB = makeTexture(3);
-    const blurFramebufferA = gl.createFramebuffer();
-    const blurFramebufferB = gl.createFramebuffer();
-    if (!blurFramebufferA || !blurFramebufferB) {
-      throw new Error("[compositor] gl.createFramebuffer returned null");
+
+    // Dual-Kawase blur chain. Level 0 has the screen source's native
+    // dimensions; each subsequent level halves both axes. The downsample
+    // pass renders into level k from level k-1; the upsample pass then
+    // walks back up. After upsampling completes, level 0 holds the final
+    // blurred image and the composite samples it (bound to texture unit
+    // BLUR_OUTPUT_UNIT). Texture unit BLUR_READ_UNIT is the dynamic source
+    // unit each pass binds its read-from level into.
+    const BLUR_READ_UNIT = 4;
+    const BLUR_OUTPUT_UNIT = 3;
+
+    interface BlurLevel {
+      texture: WebGLTexture;
+      framebuffer: WebGLFramebuffer;
+      width: number;
+      height: number;
     }
-    let blurTextureWidth = 0;
-    let blurTextureHeight = 0;
-    function ensureBlurTargetsSized(width: number, height: number): void {
+    const blurLevels: BlurLevel[] = [];
+    for (let levelIndex = 0; levelIndex <= MAX_BLUR_CHAIN_DEPTH; levelIndex++) {
+      const texture = gl.createTexture();
+      const framebuffer = gl.createFramebuffer();
+      if (!texture || !framebuffer) {
+        throw new Error("[compositor] failed to create blur level resources");
+      }
+      // Bind once for parameter setup so the level texture has linear
+      // filtering and clamp-to-edge wrapping; allocation happens lazily
+      // in ensureBlurChainSized.
+      gl.activeTexture(gl.TEXTURE0 + BLUR_READ_UNIT);
+      gl.bindTexture(gl.TEXTURE_2D, texture);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      blurLevels.push({ texture, framebuffer, width: 0, height: 0 });
+    }
+
+    let blurChainBaseWidth = 0;
+    let blurChainBaseHeight = 0;
+    function ensureBlurChainSized(width: number, height: number): void {
       if (!gl) return;
-      if (width === blurTextureWidth && height === blurTextureHeight) return;
-      blurTextureWidth = width;
-      blurTextureHeight = height;
-      for (const [unit, texture, framebuffer] of [
-        [2, blurTextureA, blurFramebufferA],
-        [3, blurTextureB, blurFramebufferB],
-      ] as const) {
-        gl.activeTexture(gl.TEXTURE0 + unit);
-        gl.bindTexture(gl.TEXTURE_2D, texture);
-        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
-        gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
-        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0);
+      if (width === blurChainBaseWidth && height === blurChainBaseHeight) return;
+      blurChainBaseWidth = width;
+      blurChainBaseHeight = height;
+      for (let levelIndex = 0; levelIndex < blurLevels.length; levelIndex++) {
+        const level = blurLevels[levelIndex];
+        const levelWidth = Math.max(1, width >> levelIndex);
+        const levelHeight = Math.max(1, height >> levelIndex);
+        level.width = levelWidth;
+        level.height = levelHeight;
+        gl.activeTexture(gl.TEXTURE0 + BLUR_READ_UNIT);
+        gl.bindTexture(gl.TEXTURE_2D, level.texture);
+        gl.texImage2D(
+          gl.TEXTURE_2D,
+          0,
+          gl.RGBA,
+          levelWidth,
+          levelHeight,
+          0,
+          gl.RGBA,
+          gl.UNSIGNED_BYTE,
+          null,
+        );
+        gl.bindFramebuffer(gl.FRAMEBUFFER, level.framebuffer);
+        gl.framebufferTexture2D(
+          gl.FRAMEBUFFER,
+          gl.COLOR_ATTACHMENT0,
+          gl.TEXTURE_2D,
+          level.texture,
+          0,
+        );
       }
       gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      // Re-bind level 0 to the unit the composite reads from so the
+      // post-blur sampler picks up the right texture. The unit only needs
+      // to hold this binding while the composite draw call fires; later
+      // passes free to repurpose BLUR_READ_UNIT.
+      gl.activeTexture(gl.TEXTURE0 + BLUR_OUTPUT_UNIT);
+      gl.bindTexture(gl.TEXTURE_2D, blurLevels[0].texture);
     }
 
     // Both video and 2D-canvas sources are top-left origin in the source
@@ -389,32 +468,75 @@ export function Compositor({
       gl.bindTexture(gl.TEXTURE_2D, screenTexture);
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, screenSource);
 
-      // Run the separable blur passes if the user has dialed in a non-zero
-      // radius. The two passes draw at the screen source's native size
-      // into the ping-pong FBOs; the composite below will then sample the
-      // final blurred result from texture unit 3 instead of unit 1.
+      // Run the dual-Kawase blur chain if the user has dialed in a
+      // non-zero radius. The composite below will then sample the final
+      // blurred result from BLUR_OUTPUT_UNIT instead of unit 1.
+      //
+      // Mapping from radius (in source pixels) to chain parameters:
+      // each down/up cycle roughly doubles the effective Gaussian sigma,
+      // so a chain of depth N with kernel offset O reaches an effective
+      // radius around (2^N) * O source pixels. We pick N = round(log2 R)
+      // clamped to the chain capacity, and let the residual fall into O
+      // (clamped to a sane range so the kernel doesn't visibly tile).
       const blurRadiusPx = Math.max(0, Math.floor(screenBlurRadiusPxRef.current));
       const screenSourceWidth = screenSource.width;
       const screenSourceHeight = screenSource.height;
       const blurEnabled = blurRadiusPx > 0 && screenSourceWidth > 0 && screenSourceHeight > 0;
       if (blurEnabled) {
-        ensureBlurTargetsSized(screenSourceWidth, screenSourceHeight);
-        gl.useProgram(blurProgram);
+        ensureBlurChainSized(screenSourceWidth, screenSourceHeight);
+
+        const chainDepth = Math.min(
+          MAX_BLUR_CHAIN_DEPTH,
+          Math.max(1, Math.round(Math.log2(blurRadiusPx))),
+        );
+        const kernelOffset = Math.min(4, Math.max(0.5, blurRadiusPx / (1 << chainDepth)));
+
         gl.bindVertexArray(vertexArrayObject);
-        gl.uniform1i(blurRadiusUniformLocation, blurRadiusPx);
-        gl.viewport(0, 0, screenSourceWidth, screenSourceHeight);
 
-        // Horizontal pass: screenTexture (unit 1) → blurFramebufferA.
-        gl.bindFramebuffer(gl.FRAMEBUFFER, blurFramebufferA);
-        gl.uniform1i(blurSourceUniformLocation, 1);
-        gl.uniform2f(blurDirectionUniformLocation, 1 / screenSourceWidth, 0);
-        gl.drawArrays(gl.TRIANGLES, 0, 6);
+        // Downsample chain: level 0 (screenTexture) → level 1 → … → level chainDepth.
+        gl.useProgram(downsampleProgram);
+        gl.uniform1i(downsampleSourceUniformLocation, BLUR_READ_UNIT);
+        gl.uniform1f(downsampleOffsetUniformLocation, kernelOffset);
+        for (let levelIndex = 1; levelIndex <= chainDepth; levelIndex++) {
+          const sourceLevel =
+            levelIndex === 1
+              ? { texture: screenTexture, width: screenSourceWidth, height: screenSourceHeight }
+              : blurLevels[levelIndex - 1];
+          const destLevel = blurLevels[levelIndex];
+          gl.activeTexture(gl.TEXTURE0 + BLUR_READ_UNIT);
+          gl.bindTexture(gl.TEXTURE_2D, sourceLevel.texture);
+          gl.uniform2f(
+            downsampleHalfPixelUniformLocation,
+            0.5 / sourceLevel.width,
+            0.5 / sourceLevel.height,
+          );
+          gl.bindFramebuffer(gl.FRAMEBUFFER, destLevel.framebuffer);
+          gl.viewport(0, 0, destLevel.width, destLevel.height);
+          gl.drawArrays(gl.TRIANGLES, 0, 6);
+        }
 
-        // Vertical pass: blurTextureA (unit 2) → blurFramebufferB.
-        gl.bindFramebuffer(gl.FRAMEBUFFER, blurFramebufferB);
-        gl.uniform1i(blurSourceUniformLocation, 2);
-        gl.uniform2f(blurDirectionUniformLocation, 0, 1 / screenSourceHeight);
-        gl.drawArrays(gl.TRIANGLES, 0, 6);
+        // Upsample chain: level chainDepth → … → level 0.
+        gl.useProgram(upsampleProgram);
+        gl.uniform1i(upsampleSourceUniformLocation, BLUR_READ_UNIT);
+        gl.uniform1f(upsampleOffsetUniformLocation, kernelOffset);
+        for (let levelIndex = chainDepth; levelIndex >= 1; levelIndex--) {
+          const sourceLevel = blurLevels[levelIndex];
+          const destLevel = blurLevels[levelIndex - 1];
+          gl.activeTexture(gl.TEXTURE0 + BLUR_READ_UNIT);
+          gl.bindTexture(gl.TEXTURE_2D, sourceLevel.texture);
+          gl.uniform2f(
+            upsampleHalfPixelUniformLocation,
+            0.5 / sourceLevel.width,
+            0.5 / sourceLevel.height,
+          );
+          gl.bindFramebuffer(gl.FRAMEBUFFER, destLevel.framebuffer);
+          gl.viewport(0, 0, destLevel.width, destLevel.height);
+          gl.drawArrays(gl.TRIANGLES, 0, 6);
+        }
+
+        // Make level 0 (the blurred result) available to the composite.
+        gl.activeTexture(gl.TEXTURE0 + BLUR_OUTPUT_UNIT);
+        gl.bindTexture(gl.TEXTURE_2D, blurLevels[0].texture);
 
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
         gl.bindVertexArray(null);
@@ -425,7 +547,7 @@ export function Compositor({
       gl.useProgram(program);
       gl.bindVertexArray(vertexArrayObject);
       gl.uniform1i(atlasUniformLocation, 0);
-      gl.uniform1i(screenUniformLocation, blurEnabled ? 3 : 1);
+      gl.uniform1i(screenUniformLocation, blurEnabled ? BLUR_OUTPUT_UNIT : 1);
       gl.uniform1f(scaleUniformLocation, atlasScale);
       gl.uniform2f(uvStretchUniformLocation, uStretchRef.current, vStretchRef.current);
       gl.uniform2f(uvOffsetUniformLocation, uOffsetRef.current, vOffsetRef.current);
@@ -492,14 +614,15 @@ export function Compositor({
       }
       gl.deleteTexture(atlasTexture);
       gl.deleteTexture(screenTexture);
-      gl.deleteTexture(blurTextureA);
-      gl.deleteTexture(blurTextureB);
-      gl.deleteFramebuffer(blurFramebufferA);
-      gl.deleteFramebuffer(blurFramebufferB);
+      for (const level of blurLevels) {
+        gl.deleteTexture(level.texture);
+        gl.deleteFramebuffer(level.framebuffer);
+      }
       gl.deleteBuffer(fullScreenQuadBuffer);
       gl.deleteVertexArray(vertexArrayObject);
       gl.deleteProgram(program);
-      gl.deleteProgram(blurProgram);
+      gl.deleteProgram(downsampleProgram);
+      gl.deleteProgram(upsampleProgram);
       for (const query of pendingTimerQueries) gl.deleteQuery(query);
     };
   }, [screenSourceCanvasRef, perfMetricsRef]);

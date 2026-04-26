@@ -31,45 +31,67 @@ void main() {
 }
 `;
 
-// Separable Gaussian blur for the screen-content texture, run as two
-// fullscreen passes (horizontal then vertical) into ping-pong FBOs before
-// the main composite samples it. Cost is O(radius) per axis instead of the
-// O(radius^2) a single-pass kernel would impose, and the work happens at
-// the screen texture's native resolution rather than the output viewport's
-// — which is usually much smaller. Blur is performed in the source's
-// encoded (sRGB) space; the composite shader still applies its own sRGB
-// EOTF on the result, so the linear-light math downstream stays correct.
-export const blurFragmentShaderSource = `#version 300 es
+// Dual Kawase blur for the screen-content texture (Marius Bjørge, ARM —
+// SIGGRAPH 2015 "Bandwidth-Efficient Graphics"). A chain of N downsample
+// passes, each halving resolution and running a 5-tap bilinear-sampled
+// kernel, then N upsample passes back up to source resolution running an
+// 8-tap bilinear-sampled kernel. Both kernels are tuned so the round-trip
+// approximates a true Gaussian visually.
+//
+// Cost is constant per pass (4–8 bilinear taps) and effective radius
+// roughly doubles per chain level, so we can reach radii in the hundreds
+// of source pixels for a fraction of what a separable Gaussian of the
+// same footprint would cost — and bandwidth at deep levels is tiny since
+// the framebuffer is 1/4, 1/16, 1/64… of the source area.
+//
+// Both shaders take `u_halfPixel = 0.5 / textureSize(u_source)` so the
+// sample positions land between source texels and free-ride on hardware
+// bilinear filtering. `u_offset` is a scalar dial that stretches the
+// kernel footprint at the current level — used by the host to fine-tune
+// effective radius beyond the discrete chain depth. As in the source's
+// previous separable implementation, the blur runs in sRGB-encoded space;
+// the composite shader applies its own sRGB EOTF to the result.
+
+export const downsampleFragmentShaderSource = `#version 300 es
 precision highp float;
 in vec2 v_uv;
 out vec4 fragColor;
 
 uniform sampler2D u_source;
-// Texel-sized offset along the blur axis: (1/width, 0) for horizontal,
-// (0, 1/height) for vertical. Lets one shader handle both passes.
-uniform vec2 u_direction;
-uniform int u_radiusPx;
+uniform vec2 u_halfPixel;
+uniform float u_offset;
 
 void main() {
-  if (u_radiusPx <= 0) {
-    fragColor = texture(u_source, v_uv);
-    return;
-  }
-  float sigma = max(float(u_radiusPx) * 0.5, 1.0);
-  float twoSigmaSquared = 2.0 * sigma * sigma;
-  vec4 weightedSum = texture(u_source, v_uv);
-  float weightSum = 1.0;
-  // GLSL ES 3.0 permits non-constant loop bounds, but a fixed compile-time
-  // upper limit keeps drivers happy and lets us early-out at u_radiusPx.
-  const int MAX_RADIUS = 64;
-  for (int offsetPx = 1; offsetPx <= MAX_RADIUS; offsetPx++) {
-    if (offsetPx > u_radiusPx) break;
-    float weight = exp(-float(offsetPx * offsetPx) / twoSigmaSquared);
-    vec2 stepUv = u_direction * float(offsetPx);
-    weightedSum += weight * (texture(u_source, v_uv + stepUv) + texture(u_source, v_uv - stepUv));
-    weightSum += 2.0 * weight;
-  }
-  fragColor = weightedSum / weightSum;
+  vec2 step = u_halfPixel * u_offset;
+  vec4 sum = texture(u_source, v_uv) * 4.0;
+  sum += texture(u_source, v_uv - step);
+  sum += texture(u_source, v_uv + step);
+  sum += texture(u_source, v_uv + vec2(step.x, -step.y));
+  sum += texture(u_source, v_uv - vec2(step.x, -step.y));
+  fragColor = sum / 8.0;
+}
+`;
+
+export const upsampleFragmentShaderSource = `#version 300 es
+precision highp float;
+in vec2 v_uv;
+out vec4 fragColor;
+
+uniform sampler2D u_source;
+uniform vec2 u_halfPixel;
+uniform float u_offset;
+
+void main() {
+  vec2 step = u_halfPixel * u_offset;
+  vec4 sum = texture(u_source, v_uv + vec2(-step.x * 2.0, 0.0));
+  sum += texture(u_source, v_uv + vec2(-step.x, step.y)) * 2.0;
+  sum += texture(u_source, v_uv + vec2(0.0, step.y * 2.0));
+  sum += texture(u_source, v_uv + vec2(step.x, step.y)) * 2.0;
+  sum += texture(u_source, v_uv + vec2(step.x * 2.0, 0.0));
+  sum += texture(u_source, v_uv + vec2(step.x, -step.y)) * 2.0;
+  sum += texture(u_source, v_uv + vec2(0.0, -step.y * 2.0));
+  sum += texture(u_source, v_uv + vec2(-step.x, -step.y)) * 2.0;
+  fragColor = sum / 12.0;
 }
 `;
 
@@ -79,8 +101,9 @@ in vec2 v_uv;
 out vec4 fragColor;
 
 // Sampled from either the raw screen-content texture or the output of the
-// separable blur passes (see blurFragmentShaderSource). Either way, it
-// holds sRGB-encoded screen pixels in the same orientation as the upload.
+// dual-Kawase blur chain (see downsample/upsampleFragmentShaderSource).
+// Either way, it holds sRGB-encoded screen pixels in the same orientation
+// as the upload.
 
 uniform sampler2D u_atlas;
 uniform sampler2D u_screen;
