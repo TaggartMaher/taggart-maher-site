@@ -92,6 +92,9 @@ uniform float u_scale;
 uniform vec2 u_uvStretch;
 // Per-axis translation added to emitterUv after the stretch.
 uniform vec2 u_uvOffset;
+// Symmetric inset of the valid screen-content sampling window. Zeroed
+// outside [edgeCutoff, 1 - edgeCutoff] on either axis.
+uniform float u_edgeCutoff;
 
 const float PASS_WIDTH = 1.0 / 3.0;
 const float WHITELIGHT_EPS = 1.0e-3;
@@ -149,7 +152,10 @@ void main() {
   }
   vec2 emitterUv = positionSum / max(whitelightSum, BLUR_TAP_COUNT * WHITELIGHT_EPS);
   emitterUv = (emitterUv - 0.5) * u_uvStretch + 0.5 + u_uvOffset;
-  vec3 screenColor = srgbToLinear(texture(u_screen, emitterUv).rgb);
+  vec2 inWindow = step(vec2(u_edgeCutoff), emitterUv) *
+                  step(emitterUv, vec2(1.0 - u_edgeCutoff));
+  float screenMask = inWindow.x * inWindow.y;
+  vec3 screenColor = srgbToLinear(texture(u_screen, emitterUv).rgb) * screenMask;
 
   vec3 finalColor = beauty + u_scale * screenColor * whitelight;
 

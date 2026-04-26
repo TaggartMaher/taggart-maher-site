@@ -21,6 +21,7 @@ export function App() {
         vStretch={debugSettings.vStretch}
         uOffset={debugSettings.uOffset}
         vOffset={debugSettings.vOffset}
+        edgeCutoff={debugSettings.edgeCutoff}
         perfMetricsRef={perfMetricsRef}
       />
       <ScreenOverlay

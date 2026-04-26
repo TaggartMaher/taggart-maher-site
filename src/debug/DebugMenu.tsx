@@ -145,6 +145,18 @@ export function DebugMenu({ settings, onChange, perfMetricsRef }: DebugMenuProps
             onChange={(event) => onChange({ ...settings, vOffset: Number(event.target.value) })}
           />
         </label>
+        <label className="debug-menu-row">
+          <span>Edge cutoff ({settings.edgeCutoff.toFixed(2)})</span>
+          <input
+            className="debug-menu-control"
+            type="range"
+            min={0}
+            max={0.25}
+            step={0.005}
+            value={settings.edgeCutoff}
+            onChange={(event) => onChange({ ...settings, edgeCutoff: Number(event.target.value) })}
+          />
+        </label>
       </section>
 
       <section className="debug-menu-section">

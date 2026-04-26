@@ -46,6 +46,12 @@ export interface DebugSettings {
   // residual mis-registration after the stretch is dialed in.
   uOffset: number;
   vOffset: number;
+  // Symmetric inset (in canvas-UV units) defining the valid screen-content
+  // sampling window: [margin, 1 - margin] on both axes. Where the
+  // (stretched + offset) emitterUv falls outside this window, the screen
+  // contribution is zeroed instead of clamping to the texture edge — kills
+  // the edge-pixel fill where the position pass overshoots the screen.
+  edgeCutoff: number;
 }
 
 export const defaultDebugSettings: DebugSettings = {
@@ -64,4 +70,5 @@ export const defaultDebugSettings: DebugSettings = {
   vStretch: 1,
   uOffset: 0,
   vOffset: 0,
+  edgeCutoff: 0,
 };

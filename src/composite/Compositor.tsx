@@ -27,6 +27,8 @@ interface CompositorProps {
   // Per-axis translation added to emitterUv after the stretch.
   uOffset: number;
   vOffset: number;
+  // Symmetric inset of the valid screen-content sampling window.
+  edgeCutoff: number;
   // Optional sink for per-frame performance metrics. The compositor
   // mutates the referenced object each frame; readers (the debug menu)
   // poll it on their own cadence so metric updates don't drive React
@@ -73,6 +75,7 @@ export function Compositor({
   vStretch,
   uOffset,
   vOffset,
+  edgeCutoff,
   perfMetricsRef,
 }: CompositorProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -93,6 +96,8 @@ export function Compositor({
   uOffsetRef.current = uOffset;
   const vOffsetRef = useRef(vOffset);
   vOffsetRef.current = vOffset;
+  const edgeCutoffRef = useRef(edgeCutoff);
+  edgeCutoffRef.current = edgeCutoff;
 
   // React to the freeze toggle without tearing down the WebGL context:
   // pause/seek the video element directly, and let the rAF render loop
@@ -144,6 +149,7 @@ export function Compositor({
     const scaleUniformLocation = gl.getUniformLocation(program, "u_scale");
     const uvStretchUniformLocation = gl.getUniformLocation(program, "u_uvStretch");
     const uvOffsetUniformLocation = gl.getUniformLocation(program, "u_uvOffset");
+    const edgeCutoffUniformLocation = gl.getUniformLocation(program, "u_edgeCutoff");
     const blurSourceUniformLocation = gl.getUniformLocation(blurProgram, "u_source");
     const blurDirectionUniformLocation = gl.getUniformLocation(blurProgram, "u_direction");
     const blurRadiusUniformLocation = gl.getUniformLocation(blurProgram, "u_radiusPx");
@@ -423,6 +429,7 @@ export function Compositor({
       gl.uniform1f(scaleUniformLocation, atlasScale);
       gl.uniform2f(uvStretchUniformLocation, uStretchRef.current, vStretchRef.current);
       gl.uniform2f(uvOffsetUniformLocation, uOffsetRef.current, vOffsetRef.current);
+      gl.uniform1f(edgeCutoffUniformLocation, edgeCutoffRef.current);
       gl.drawArrays(gl.TRIANGLES, 0, 6);
       gl.bindVertexArray(null);
 
