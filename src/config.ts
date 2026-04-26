@@ -22,8 +22,12 @@ export const cameraPose: CameraPose = {
 };
 
 export const screenPlane: ScreenPlane = {
-  positionMeters: [-0.177359, 0.041848, 0.360192],
-  rotationEulerDegXYZ: [-1.20527, -3.16211, 1.46014],
+  positionMeters: [-0.16833, 0.04207, 0.36069],
+  // Plane stands vertical with its normal pointing world +X (toward the
+  // camera). With Blender's XYZ-Euler (Rz · Ry · Rx) this is [90, 0, 90]:
+  // local +Z → world +X (face), local +X → world +Y (width, horizontal),
+  // local +Y → world +Z (height, vertical).
+  rotationEulerDegXYZ: [90, 0, 90],
   widthMeters: 0.569,
   heightMeters: 0.35,
 };

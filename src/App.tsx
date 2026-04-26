@@ -1,9 +1,23 @@
+import { useRef, useState } from "react";
 import "./composite/compositor.css";
 import { Compositor } from "./composite/Compositor";
+import { ScreenOverlay } from "./composite/ScreenOverlay";
+import { DebugMenu } from "./debug/DebugMenu";
+import { defaultDebugSettings, type DebugSettings } from "./debug/debugSettings";
 
 export function App() {
-  // Phase B+C: the full-viewport compositor with placeholder screen content.
-  // Portfolio integration into the screen rect lands with Phase D
-  // (DOM-to-texture) and the responsive fallback path lands with Phase E.
-  return <Compositor />;
+  const screenSourceCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const [debugSettings, setDebugSettings] = useState<DebugSettings>(defaultDebugSettings);
+
+  return (
+    <>
+      <Compositor screenSourceCanvasRef={screenSourceCanvasRef} />
+      <ScreenOverlay
+        settings={debugSettings}
+        onSettingsChange={setDebugSettings}
+        textureCanvasRef={screenSourceCanvasRef}
+      />
+      <DebugMenu settings={debugSettings} onChange={setDebugSettings} />
+    </>
+  );
 }

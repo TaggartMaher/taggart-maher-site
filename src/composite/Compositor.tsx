@@ -2,7 +2,14 @@ import { useEffect, useRef } from "react";
 import { atlasPath } from "../config";
 import { fragmentShaderSource, vertexShaderSource } from "./shader";
 
-const screenContentImageUrl = "/composite/screen-test.png";
+interface CompositorProps {
+  // Canvas providing the live screen-content image. The compositor
+  // re-uploads it as the `u_screen` texture every video frame, so any
+  // 2D-canvas drawing the parent does is reflected in the bounce light
+  // on the next frame. May start null and be assigned later — the
+  // compositor waits for it before rendering.
+  screenSourceCanvasRef: React.RefObject<HTMLCanvasElement | null>;
+}
 
 function compileShader(gl: WebGL2RenderingContext, type: number, source: string): WebGLShader {
   const shader = gl.createShader(type);
@@ -35,7 +42,7 @@ function linkProgram(
   return program;
 }
 
-export function Compositor() {
+export function Compositor({ screenSourceCanvasRef }: CompositorProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
 
@@ -107,25 +114,6 @@ export function Compositor() {
     let videoFrameCallbackHandle: number | null = null;
     let animationFrameHandle: number | null = null;
 
-    // Static screen content: load the test image once and upload it to the
-    // screen texture. The atlas video continues to play; only the screen
-    // contribution is now a fixed image instead of the cycling-corner debug
-    // pattern.
-    const screenContentImage = new Image();
-    screenContentImage.crossOrigin = "anonymous";
-    screenContentImage.src = screenContentImageUrl;
-    let screenContentReady = false;
-    screenContentImage.onload = () => {
-      if (cancelled || !gl) return;
-      gl.activeTexture(gl.TEXTURE1);
-      gl.bindTexture(gl.TEXTURE_2D, screenTexture);
-      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, screenContentImage);
-      screenContentReady = true;
-    };
-    screenContentImage.onerror = () => {
-      console.warn(`[compositor] failed to load screen content image: ${screenContentImageUrl}`);
-    };
-
     // The build pipeline pre-scales whitelight + position into [0,1] and
     // writes the scale factor here. Until the metadata arrives we render
     // with scale = 1 (visible scene, no bounce magnitude correction).
@@ -167,7 +155,14 @@ export function Compositor() {
         gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, video);
       }
 
-      if (!screenContentReady) return;
+      // Upload the latest screen-content frame from the parent's canvas.
+      // Re-uploading every frame is cheap for a ~1024x630 canvas and
+      // keeps draggable / live edits in sync without a separate signal.
+      const screenSource = screenSourceCanvasRef.current;
+      if (!screenSource) return;
+      gl.activeTexture(gl.TEXTURE1);
+      gl.bindTexture(gl.TEXTURE_2D, screenTexture);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, screenSource);
 
       resizeCanvasToViewport();
 
@@ -226,7 +221,7 @@ export function Compositor() {
       gl.deleteVertexArray(vertexArrayObject);
       gl.deleteProgram(program);
     };
-  }, []);
+  }, [screenSourceCanvasRef]);
 
   return (
     <>

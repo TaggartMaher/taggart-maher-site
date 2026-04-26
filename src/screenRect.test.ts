@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { screenRect as configuredScreenRect } from "./config";
+import { renderAspect, screenPlane, screenRect as configuredScreenRect } from "./config";
 import { computeScreenRect } from "./screenRect";
 
 const TOLERANCE = 1e-6;
@@ -106,13 +106,32 @@ describe("computeScreenRect", () => {
     expect(rect.top + rect.height / 2).toBeCloseTo(0.5, 6);
   });
 
+  it("projected screen rect aspect matches the screen plane's intrinsic aspect", () => {
+    // The screen in the rendered frame should appear with roughly the
+    // same width/height ratio as the physical screen plane. Big drift
+    // here means either the camera's pose isn't actually pointing at the
+    // screen face-on (so we're seeing it foreshortened) or the plane's
+    // width/height in config.ts are swapped relative to the .blend.
+    const planeAspect = screenPlane.widthMeters / screenPlane.heightMeters;
+    // rect.width/height are fractions of the rendered frame, which itself
+    // has aspect `renderAspect` (width/height). Pixel-space aspect of the
+    // projected rect is therefore (rect.width / rect.height) * renderAspect.
+    const rectAspect = (configuredScreenRect.width / configuredScreenRect.height) * renderAspect;
+    // Tolerance is loose (precision 0 → within 0.5) because the camera
+    // isn't perfectly head-on to the plane: slight elevation / off-axis
+    // pose foreshortens height a few percent. A blown rotation (e.g.
+    // plane lying flat) shows up as several-x drift, which this still
+    // catches.
+    expect(rectAspect).toBeCloseTo(planeAspect, 0);
+  });
+
   it("locks in the configured camera + screen plane (regression guard)", () => {
     // Snapshot of the rect computed from src/config.ts. Drift in the camera
     // pose, screen plane, render aspect, or rotation convention will trip
     // this. Update the expected values when the .blend changes intentionally.
-    expect(configuredScreenRect.left).toBeCloseTo(0.2725380211759628, 12);
-    expect(configuredScreenRect.top).toBeCloseTo(0.4192700835351703, 12);
-    expect(configuredScreenRect.width).toBeCloseTo(0.5589033524878813, 12);
-    expect(configuredScreenRect.height).toBeCloseTo(0.16572264003470677, 12);
+    expect(configuredScreenRect.left).toBeCloseTo(0.25960678722942376, 12);
+    expect(configuredScreenRect.top).toBeCloseTo(0.1558444207868484, 12);
+    expect(configuredScreenRect.width).toBeCloseTo(0.5588033923306764, 12);
+    expect(configuredScreenRect.height).toBeCloseTo(0.5759416037881977, 12);
   });
 });
