@@ -16,6 +16,11 @@ export interface DebugSettings {
   // draggable square / image background still update live; only the
   // beauty/whitelight/position passes freeze.
   freezeFirstFrame: boolean;
+  // When true, source the atlas from the lossless PNG (frame 1) instead of
+  // the H.264 MP4. The bounce passes are static in this mode (single
+  // frame), but the position pass is free of 4:2:0 chroma artifacts —
+  // useful for tuning the shader without fighting codec error.
+  useLosslessImage: boolean;
   imageBackgroundEnabled: boolean;
   imageBackgroundUrl: string;
   colorBackgroundEnabled: boolean;
@@ -65,6 +70,7 @@ export interface DebugSettings {
 export const defaultDebugSettings: DebugSettings = {
   hidePageOverlay: false,
   freezeFirstFrame: false,
+  useLosslessImage: false,
   imageBackgroundEnabled: false,
   imageBackgroundUrl: testImages[0].url,
   colorBackgroundEnabled: false,

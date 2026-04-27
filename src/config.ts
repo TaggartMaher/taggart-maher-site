@@ -42,3 +42,9 @@ export const screenRect = computeScreenRect(cameraPose, screenPlane, renderAspec
 // automatic. 4:2:0 is the only chroma format that decodes via `<video>`
 // in Chrome, Firefox, and Safari — system decoders reject 4:4:4.
 export const atlasPath = "/composite/atlas.mp4";
+
+// Perceptually-lossless still version of the atlas: frame 1 of the same
+// hstack+sRGB pipeline, encoded as PNG (rgb24, no chroma subsampling). The
+// debug menu can route the compositor to this image instead of the MP4 to
+// eliminate H.264 / 4:2:0 artifacts when iterating on shader behavior.
+export const atlasImagePath = "/composite/atlas.png";

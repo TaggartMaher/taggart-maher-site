@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { atlasPath } from "../config";
+import { atlasImagePath, atlasPath } from "../config";
 import type { PerfMetrics } from "./perfMetrics";
 import {
   downsampleFragmentShaderSource,
@@ -27,6 +27,11 @@ interface CompositorProps {
   // texture and shader uniforms keep updating so dragging the debug
   // square or swapping background still re-renders.
   freezeFirstFrame: boolean;
+  // When true, the compositor pulls the atlas texture from a lossless PNG
+  // of frame 1 instead of the looping MP4. The bounce contribution is
+  // static (single frame), but free of chroma-subsampling artifacts. The
+  // mount-only setup effect re-runs when this toggles to swap sources.
+  useLosslessImage: boolean;
   // Effective blur radius (in screen-texture pixels) applied to the
   // screen-content image before it feeds the composite, via a dual-Kawase
   // downsample/upsample chain. 0 disables the blur passes and the
@@ -89,6 +94,7 @@ function linkProgram(
 export function Compositor({
   screenSourceCanvasRef,
   freezeFirstFrame,
+  useLosslessImage,
   screenBlurRadiusPx,
   uStretch,
   vStretch,
@@ -102,6 +108,7 @@ export function Compositor({
 }: CompositorProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const imageRef = useRef<HTMLImageElement | null>(null);
   // Mirror prop into a ref so the handleVideoReady callback inside the
   // mount-only setup effect can honor the latest freeze state without
   // re-running the WebGL teardown/rebuild path.
@@ -152,7 +159,8 @@ export function Compositor({
   useEffect(() => {
     const canvas = canvasRef.current;
     const video = videoRef.current;
-    if (!canvas || !video) return;
+    const image = imageRef.current;
+    if (!canvas || !video || !image) return;
 
     const gl = canvas.getContext("webgl2", { antialias: false, premultipliedAlpha: false });
     if (!gl) {
@@ -325,6 +333,7 @@ export function Compositor({
 
     let cancelled = false;
     let animationFrameHandle: number | null = null;
+    let atlasImageUploaded = false;
 
     // Perf instrumentation. The render loop updates these scalars each
     // frame and writes a smoothed snapshot into perfMetricsRef so the
@@ -426,7 +435,7 @@ export function Compositor({
     }
 
     function renderFrame(): void {
-      if (cancelled || !gl || !canvas || !video) return;
+      if (cancelled || !gl || !canvas || !video || !image) return;
 
       const cpuStartMs = performance.now();
       recentFrameTimestamps.push(cpuStartMs);
@@ -469,8 +478,18 @@ export function Compositor({
         }
       }
 
-      // Upload atlas frame from the current video frame.
-      if (video.readyState >= video.HAVE_CURRENT_DATA) {
+      // Upload atlas frame. Lossless-image mode uploads the PNG exactly
+      // once (it's static — re-uploading a 3x-wide RGB image at rAF rate
+      // costs ~18 MB/frame and tanks fps); video mode uploads every frame
+      // because the browser has a fast zero-copy path from the decoder.
+      if (useLosslessImage) {
+        if (!atlasImageUploaded && image.complete && image.naturalWidth > 0) {
+          gl.activeTexture(gl.TEXTURE0);
+          gl.bindTexture(gl.TEXTURE_2D, atlasTexture);
+          gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, image);
+          atlasImageUploaded = true;
+        }
+      } else if (video.readyState >= video.HAVE_CURRENT_DATA) {
         gl.activeTexture(gl.TEXTURE0);
         gl.bindTexture(gl.TEXTURE_2D, atlasTexture);
         gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, video);
@@ -620,7 +639,20 @@ export function Compositor({
       scheduleNextFrame();
     }
 
-    if (video.readyState >= video.HAVE_CURRENT_DATA) {
+    function handleImageReady(): void {
+      // Image-mode: video stays paused; rAF drives screen-content uploads
+      // and shader-uniform updates so debug edits still recompose.
+      video!.pause();
+      scheduleNextFrame();
+    }
+
+    if (useLosslessImage) {
+      if (image.complete && image.naturalWidth > 0) {
+        handleImageReady();
+      } else {
+        image.addEventListener("load", handleImageReady, { once: true });
+      }
+    } else if (video.readyState >= video.HAVE_CURRENT_DATA) {
       handleVideoReady();
     } else {
       video.addEventListener("loadeddata", handleVideoReady, { once: true });
@@ -629,6 +661,7 @@ export function Compositor({
     return () => {
       cancelled = true;
       video.removeEventListener("loadeddata", handleVideoReady);
+      image.removeEventListener("load", handleImageReady);
       if (animationFrameHandle !== null) {
         cancelAnimationFrame(animationFrameHandle);
       }
@@ -645,7 +678,7 @@ export function Compositor({
       gl.deleteProgram(upsampleProgram);
       for (const query of pendingTimerQueries) gl.deleteQuery(query);
     };
-  }, [screenSourceCanvasRef, perfMetricsRef]);
+  }, [screenSourceCanvasRef, perfMetricsRef, useLosslessImage]);
 
   return (
     <>
@@ -657,6 +690,13 @@ export function Compositor({
         loop
         playsInline
         preload="auto"
+        crossOrigin="anonymous"
+        style={{ display: "none" }}
+      />
+      <img
+        ref={imageRef}
+        src={atlasImagePath}
+        alt=""
         crossOrigin="anonymous"
         style={{ display: "none" }}
       />

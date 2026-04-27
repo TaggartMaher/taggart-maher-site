@@ -84,6 +84,14 @@ export function DebugMenu({ settings, onChange, perfMetricsRef }: DebugMenuProps
           <span>Freeze first frame</span>
         </label>
         <label className="debug-menu-row">
+          <input
+            type="checkbox"
+            checked={settings.useLosslessImage}
+            onChange={(event) => onChange({ ...settings, useLosslessImage: event.target.checked })}
+          />
+          <span>Lossless image (frame 1)</span>
+        </label>
+        <label className="debug-menu-row">
           <span>Screen blur ({settings.screenBlurRadiusPx}px)</span>
           <input
             className="debug-menu-control"

@@ -44,6 +44,7 @@ const passes = ["beauty", "whitelight", "position"] as const;
 const repoRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const compositeDir = join(repoRoot, "public", "composite");
 const atlasPath = join(compositeDir, "atlas.mp4");
+const atlasImagePath = join(compositeDir, "atlas.png");
 const atlasMetaPath = join(compositeDir, "atlasMeta.json");
 
 // `scale` is the screen emission strength E detected from the whitelight
@@ -243,6 +244,54 @@ if (needsEncode) {
     process.exit(result.status ?? 1);
   }
   console.log(`[assets] encoded atlas -> ${atlasPath}`);
+}
+
+// Perceptually-lossless still atlas: same hstack + 1/E scale + sRGB OETF
+// pipeline as the video, but only frame 1 and written to PNG (rgb24, full
+// 4:4:4, no inter-frame compression). The runtime can swap this in for the
+// MP4 in debug mode to eliminate the H.264 + 4:2:0 chroma artifacts that
+// affect the position pass on edge bounces. Rebuilt whenever the video
+// atlas is rebuilt, or when the PNG is missing.
+const stillNeedsEncode = needsEncode || !existsSync(atlasImagePath);
+if (stillNeedsEncode) {
+  console.log("[assets] encoding lossless still atlas (frame 1, PNG rgb24)...");
+
+  const channelScaleStill = `colorchannelmixer=rr=${inverseScale}:gg=${inverseScale}:bb=${inverseScale}`;
+  const stillFilterGraph = [
+    `[0:v]format=gbrpf32le[beauty]`,
+    `[1:v]format=gbrpf32le,${channelScaleStill}[whitelight]`,
+    `[2:v]format=gbrpf32le,${channelScaleStill}[position]`,
+    `[beauty][whitelight][position]hstack=inputs=3,zscale=tin=linear:t=iec61966-2-1:m=709,format=rgb24[out]`,
+  ].join(";");
+
+  const stillResult = spawnSync(
+    "ffmpeg",
+    [
+      "-y",
+      "-hide_banner",
+      "-loglevel",
+      "warning",
+      "-i",
+      exrPath("beauty", 1),
+      "-i",
+      exrPath("whitelight", 1),
+      "-i",
+      exrPath("position", 1),
+      "-filter_complex",
+      stillFilterGraph,
+      "-map",
+      "[out]",
+      "-frames:v",
+      "1",
+      atlasImagePath,
+    ],
+    { stdio: "inherit" },
+  );
+  if (stillResult.status !== 0) {
+    console.error("[assets] ffmpeg still-atlas encode failed");
+    process.exit(stillResult.status ?? 1);
+  }
+  console.log(`[assets] encoded still atlas -> ${atlasImagePath}`);
 }
 
 // Metadata sidecar: the runtime fetches this and feeds the scale into the
