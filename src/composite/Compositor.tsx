@@ -27,17 +27,24 @@ interface CompositorProps {
   // texture and shader uniforms keep updating so dragging the debug
   // square or swapping background still re-renders.
   freezeFirstFrame: boolean;
-  // When true, the compositor pulls the atlas texture from a lossless PNG
-  // of frame 1 instead of the looping MP4. The bounce contribution is
-  // static (single frame), but free of chroma-subsampling artifacts. The
+  // When true, the compositor pulls the atlas texture from the cellular
+  // still PNG (frame 1, `[ beauty | whitelight | screen_0 | … |
+  // screen_{N²-1} ]`) instead of the looping MP4. The bounce contribution
+  // is static and free of chroma-subsampling artifacts; emitter position
+  // is one of N² discrete centroids picked per pixel by argmax. The
   // mount-only setup effect re-runs when this toggles to swap sources.
-  useLosslessImage: boolean;
+  useCellularImage: boolean;
   // Effective blur radius (in screen-texture pixels) applied to the
   // screen-content image before it feeds the composite, via a dual-Kawase
   // downsample/upsample chain. 0 disables the blur passes and the
   // composite samples the raw screen texture. The host maps the radius to
   // a chain depth and a final-pass kernel offset.
   screenBlurRadiusPx: number;
+  // Box-average radius (in atlas texels) applied to the per-cell
+  // brightness reduction before argmax in the cellular shader. Smooths
+  // cell-boundary flicker; 0 disables the average. Integer; clamped to
+  // [0, 5] in the shader.
+  lookupBlurRadius: number;
   // Per-axis linear stretch around (0.5, 0.5) applied to the emitter UV
   // before sampling the screen content. 1.0 is the physical default;
   // > 1 pushes that axis's edges outward.
@@ -94,8 +101,9 @@ function linkProgram(
 export function Compositor({
   screenSourceCanvasRef,
   freezeFirstFrame,
-  useLosslessImage,
+  useCellularImage,
   screenBlurRadiusPx,
+  lookupBlurRadius,
   uStretch,
   vStretch,
   uOffset,
@@ -117,6 +125,8 @@ export function Compositor({
   // loop reads it each frame without forcing a context rebuild on change.
   const screenBlurRadiusPxRef = useRef(screenBlurRadiusPx);
   screenBlurRadiusPxRef.current = screenBlurRadiusPx;
+  const lookupBlurRadiusRef = useRef(lookupBlurRadius);
+  lookupBlurRadiusRef.current = lookupBlurRadius;
   const uStretchRef = useRef(uStretch);
   uStretchRef.current = uStretch;
   const vStretchRef = useRef(vStretch);
@@ -200,6 +210,7 @@ export function Compositor({
     const screenSaturationUniformLocation = gl.getUniformLocation(program, "u_screenSaturation");
     const screenContrastUniformLocation = gl.getUniformLocation(program, "u_screenContrast");
     const screenBrightnessUniformLocation = gl.getUniformLocation(program, "u_screenBrightness");
+    const lookupBlurRadiusUniformLocation = gl.getUniformLocation(program, "u_lookupBlurRadius");
     const downsampleSourceUniformLocation = gl.getUniformLocation(downsampleProgram, "u_source");
     const downsampleHalfPixelUniformLocation = gl.getUniformLocation(
       downsampleProgram,
@@ -478,11 +489,11 @@ export function Compositor({
         }
       }
 
-      // Upload atlas frame. Lossless-image mode uploads the PNG exactly
-      // once (it's static — re-uploading a 3x-wide RGB image at rAF rate
-      // costs ~18 MB/frame and tanks fps); video mode uploads every frame
-      // because the browser has a fast zero-copy path from the decoder.
-      if (useLosslessImage) {
+      // Upload atlas frame. Cellular-image mode uploads the PNG exactly
+      // once (it's static — re-uploading a wide RGB image at rAF rate
+      // tanks fps); video mode uploads every frame because the browser
+      // has a fast zero-copy path from the decoder.
+      if (useCellularImage) {
         if (!atlasImageUploaded && image.complete && image.naturalWidth > 0) {
           gl.activeTexture(gl.TEXTURE0);
           gl.bindTexture(gl.TEXTURE_2D, atlasTexture);
@@ -591,6 +602,7 @@ export function Compositor({
       gl.uniform1f(screenSaturationUniformLocation, screenSaturationRef.current);
       gl.uniform1f(screenContrastUniformLocation, screenContrastRef.current);
       gl.uniform1f(screenBrightnessUniformLocation, screenBrightnessRef.current);
+      gl.uniform1i(lookupBlurRadiusUniformLocation, lookupBlurRadiusRef.current);
       gl.drawArrays(gl.TRIANGLES, 0, 6);
       gl.bindVertexArray(null);
 
@@ -646,7 +658,7 @@ export function Compositor({
       scheduleNextFrame();
     }
 
-    if (useLosslessImage) {
+    if (useCellularImage) {
       if (image.complete && image.naturalWidth > 0) {
         handleImageReady();
       } else {
@@ -678,7 +690,7 @@ export function Compositor({
       gl.deleteProgram(upsampleProgram);
       for (const query of pendingTimerQueries) gl.deleteQuery(query);
     };
-  }, [screenSourceCanvasRef, perfMetricsRef, useLosslessImage]);
+  }, [screenSourceCanvasRef, perfMetricsRef, useCellularImage]);
 
   return (
     <>

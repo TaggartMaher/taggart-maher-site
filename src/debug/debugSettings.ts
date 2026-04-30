@@ -16,17 +16,28 @@ export interface DebugSettings {
   // draggable square / image background still update live; only the
   // beauty/whitelight/position passes freeze.
   freezeFirstFrame: boolean;
-  // When true, source the atlas from the lossless PNG (frame 1) instead of
-  // the H.264 MP4. The bounce passes are static in this mode (single
-  // frame), but the position pass is free of 4:2:0 chroma artifacts —
-  // useful for tuning the shader without fighting codec error.
-  useLosslessImage: boolean;
+  // When true, source the atlas from the cellular still PNG (frame 1)
+  // instead of the H.264 MP4. The still has `2 + N²` tiles
+  // `[ beauty | whitelight | screen_0 | … | screen_{N²-1} ]`; the shader
+  // picks the dominant cell per pixel and looks up the user screen at
+  // that cell's centroid. Bounce passes are static in this mode (single
+  // frame), but free of 4:2:0 chroma artifacts and discretized into
+  // N² emitter positions, which survives the lossless image path
+  // cleanly.
+  useCellularImage: boolean;
   imageBackgroundEnabled: boolean;
   imageBackgroundUrl: string;
+  // When true, the image background still feeds the screen-content
+  // canvas (so the bounce light reflects it) but the DOM <img> overlay
+  // is not rendered, so the user can see the rendered scene through
+  // the screen-rect area.
+  hideImageOverlay: boolean;
   colorBackgroundEnabled: boolean;
   colorBackgroundColor: string;
   squareEnabled: boolean;
   squareColor: string;
+  // Same idea as hideImageOverlay, for the draggable square.
+  hideSquareOverlay: boolean;
   // Square position as normalized coords of the square's top-left in
   // [0, 1] of the screen plane's UV space. Persists across re-renders so
   // the square stays put while the user toggles other options.
@@ -36,6 +47,11 @@ export interface DebugSettings {
   // feeds the composite, in screen-texture pixels, via a dual-Kawase
   // downsample/upsample chain. 0 disables the blur.
   screenBlurRadiusPx: number;
+  // Box-average radius (in atlas texels) applied to the per-cell
+  // brightness reduction before argmax in the cellular-image shader.
+  // Smooths cell-boundary flicker where two cells are nearly equally
+  // bright at a pixel. Integer; clamped to [0, 5] in the shader.
+  lookupBlurRadius: number;
   // Linear stretch applied to emitterUv around (0.5, 0.5) before sampling
   // the screen content, per axis:
   //   u_out = (u - 0.5) * uStretch + 0.5
@@ -70,16 +86,19 @@ export interface DebugSettings {
 export const defaultDebugSettings: DebugSettings = {
   hidePageOverlay: false,
   freezeFirstFrame: false,
-  useLosslessImage: false,
+  useCellularImage: true,
   imageBackgroundEnabled: false,
   imageBackgroundUrl: testImages[0].url,
+  hideImageOverlay: false,
   colorBackgroundEnabled: false,
   colorBackgroundColor: "#1e90ff",
   squareEnabled: false,
   squareColor: "#ff5500",
+  hideSquareOverlay: false,
   squareNormalizedX: 0.4,
   squareNormalizedY: 0.4,
   screenBlurRadiusPx: 0,
+  lookupBlurRadius: 1,
   uStretch: 1,
   vStretch: 1,
   uOffset: 0,

@@ -306,7 +306,13 @@ export function ScreenOverlay({
         overlayRef.current.getBoundingClientRect().height
       : SQUARE_FRACTION;
 
-  const showImage = settings.imageBackgroundEnabled;
+  // showImage / showSquare drive the DOM-side rendering only; the
+  // off-screen canvas-side painting (which feeds the bounce-light
+  // texture) keys directly off imageBackgroundEnabled / squareEnabled
+  // so the user can hide the on-screen overlay while still seeing the
+  // composited bounce reflecting the image / square.
+  const showImage = settings.imageBackgroundEnabled && !settings.hideImageOverlay;
+  const showSquare = settings.squareEnabled && !settings.hideSquareOverlay;
   const showColor = settings.colorBackgroundEnabled;
   // Portfolio stays mounted whenever there's no image/color background,
   // even when the user has hidden the page overlay — the offscreen
@@ -352,7 +358,7 @@ export function ScreenOverlay({
           style={{ background: settings.colorBackgroundColor }}
         />
       )}
-      {settings.squareEnabled && (
+      {showSquare && (
         <div
           className="screen-overlay-square"
           style={{

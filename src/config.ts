@@ -7,6 +7,14 @@ import { computeScreenRect, type CameraPose, type ScreenPlane } from "./screenRe
 export const frameCount = 96;
 export const fps = 24;
 
+// Side length of the screen-cell grid for cellular-image mode. The screen
+// plane is subdivided into N×N cells in Blender (see
+// blender/generate_screen_cells.py) and each cell renders to its own EXR
+// AOV. The shader hard-codes the same N as `const int N` for argmax
+// over (2 + N²) atlas tiles — bumping this value requires a code change
+// on both sides, not just a config tweak.
+export const cellsPerSide = 3;
+
 // Render output aspect (width / height). Update if the Blender output
 // resolution changes.
 export const renderAspect = 16 / 9;

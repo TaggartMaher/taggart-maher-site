@@ -40,7 +40,7 @@ import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "no
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
-import { frameCount, fps } from "../src/config";
+import { cellsPerSide, frameCount, fps } from "../src/config";
 
 // Load BLENDER_RENDERS_DIR (and friends) from the repo's .env so the script
 // works the same whether invoked directly or via an npm script. Silent if
@@ -76,7 +76,19 @@ interface AtlasMeta {
   encoding: string;
 }
 
-const atlasEncoding = "h264-420-srgb-v2";
+const atlasEncoding = "cellular-srgb-v2";
+
+function detectTileDimensions(samplePath: string): { width: number; height: number } {
+  const result = spawnSync("oiiotool", ["--info", samplePath], { encoding: "utf8" });
+  if (result.status !== 0) {
+    throw new Error(`[assets] oiiotool --info failed for ${samplePath}:\n${result.stderr}`);
+  }
+  const match = result.stdout.match(/:\s*(\d+)\s*x\s*(\d+),\s*\d+\s*channel/);
+  if (!match) {
+    throw new Error(`[assets] could not parse dimensions from oiiotool --info for ${samplePath}`);
+  }
+  return { width: parseInt(match[1], 10), height: parseInt(match[2], 10) };
+}
 
 function detectAtlasScale(rendersDir: string): number {
   const sampleFrame = join(rendersDir, "whitelight", "whitelight-0001.exr");
@@ -143,29 +155,32 @@ function fileMtime(path: string): number {
   return statSync(path).mtimeMs;
 }
 
-// Step 0: check inputs. The still atlas only needs frame 1 of each pass;
-// the video atlas needs the full sequence. Track the newest mtime per
-// scope so each output's cache check uses the right input set.
-let stillInputsPresent = true;
+// Step 0: check inputs. The video atlas always wants the full
+// beauty/whitelight/position sequence. The still atlas can be built
+// from either the cellular inputs (beauty + whitelight + screen_K for
+// K in [0, N²)) or the legacy 3-pass inputs (beauty + whitelight +
+// position frame 1) — cellular wins when both are available, since the
+// runtime debug toggle defaults to cellular mode.
+let legacyStillInputsPresent = true;
 let videoInputsPresent = true;
-let newestStillInputMtime = 0;
+let newestLegacyStillInputMtime = 0;
 let newestVideoInputMtime = 0;
 for (const pass of passes) {
   const passDirectory = join(blenderRendersDir, pass);
   if (!existsSync(passDirectory)) {
     console.warn(`[assets] missing pass directory: ${passDirectory}`);
-    stillInputsPresent = false;
+    legacyStillInputsPresent = false;
     videoInputsPresent = false;
     continue;
   }
   const frameOnePath = exrPath(pass, 1);
   if (!existsSync(frameOnePath)) {
     console.warn(`[assets] missing frame 1: ${frameOnePath}`);
-    stillInputsPresent = false;
+    legacyStillInputsPresent = false;
     videoInputsPresent = false;
   } else {
     const frameOneMtime = fileMtime(frameOnePath);
-    if (frameOneMtime > newestStillInputMtime) newestStillInputMtime = frameOneMtime;
+    if (frameOneMtime > newestLegacyStillInputMtime) newestLegacyStillInputMtime = frameOneMtime;
     if (frameOneMtime > newestVideoInputMtime) newestVideoInputMtime = frameOneMtime;
   }
   for (let frameIndex = 2; frameIndex <= frameCount; frameIndex += 1) {
@@ -179,9 +194,45 @@ for (const pass of passes) {
   }
 }
 
+// Cellular still-atlas inputs. Cell EXRs live in
+// `$BLENDER_RENDERS_DIR/cells/`, alongside the beauty/whitelight/position
+// pass directories. Filename can be either `screen_K_.exr` (what
+// Blender 5.1's File Output node currently writes — the `####` padding
+// token doesn't substitute in multilayer EXR mode and leaves a trailing
+// underscore) or `screen_K_0001.exr` (the padded form, future-proof).
+// First match wins.
+const cellsDir = join(blenderRendersDir, "cells");
+const cellCount = cellsPerSide * cellsPerSide;
+const cellFrameOnePaths: string[] = [];
+let newestCellInputMtime = 0;
+for (let cellIndex = 0; cellIndex < cellCount; cellIndex += 1) {
+  const unpaddedPath = join(cellsDir, `screen_${cellIndex}_.exr`);
+  const paddedPath = join(cellsDir, `screen_${cellIndex}_0001.exr`);
+  let resolvedPath: string | null = null;
+  if (existsSync(unpaddedPath)) resolvedPath = unpaddedPath;
+  else if (existsSync(paddedPath)) resolvedPath = paddedPath;
+  if (!resolvedPath) {
+    console.warn(`[assets] cellular path: missing cell ${cellIndex} EXR in ${cellsDir}`);
+    break;
+  }
+  cellFrameOnePaths.push(resolvedPath);
+  const mtime = fileMtime(resolvedPath);
+  if (mtime > newestCellInputMtime) newestCellInputMtime = mtime;
+}
+const beautyFrameOnePresent = existsSync(exrPath("beauty", 1));
+const whitelightFrameOnePresent = existsSync(exrPath("whitelight", 1));
+const cellularStillInputsPresent =
+  beautyFrameOnePresent && whitelightFrameOnePresent && cellFrameOnePaths.length === cellCount;
+
+const useCellularStill = cellularStillInputsPresent;
+const stillInputsPresent = useCellularStill || legacyStillInputsPresent;
+const newestStillInputMtime = useCellularStill
+  ? Math.max(newestLegacyStillInputMtime, newestCellInputMtime)
+  : newestLegacyStillInputMtime;
+
 if (!stillInputsPresent) {
   console.warn(
-    "[assets] frame 1 inputs incomplete — skipping atlas build. Site will run in fallback mode.",
+    "[assets] frame 1 inputs incomplete (need beauty + whitelight + (cells or position)) — skipping atlas build. Site will run in fallback mode.",
   );
   process.exit(0);
 }
@@ -281,53 +332,151 @@ if (needsEncode) {
   console.log(`[assets] encoded atlas -> ${atlasPath}`);
 }
 
-// Perceptually-lossless still atlas: same hstack + 1/E scale + sRGB OETF
-// pipeline as the video, but only frame 1 and written to PNG (rgb24, full
-// 4:4:4, no inter-frame compression). The runtime can swap this in for the
-// MP4 in debug mode to eliminate the H.264 + 4:2:0 chroma artifacts that
-// affect the position pass on edge bounces. Rebuilt whenever the video
-// atlas is rebuilt, or when the PNG is missing.
+// Perceptually-lossless still atlas: same per-tile 1/E scale + sRGB OETF
+// pipeline as the video, but only frame 1 and written to PNG (rgb24,
+// full 4:4:4, no inter-frame compression). The runtime swaps this in
+// for the MP4 in cellular-image mode to eliminate H.264 + 4:2:0 chroma
+// artifacts and discretize emitter position into N² cells. Rebuilt
+// whenever a relevant input changes or the PNG is missing.
+const channelScaleStill = `colorchannelmixer=rr=${inverseScale}:gg=${inverseScale}:bb=${inverseScale}`;
 const stillNeedsEncode =
   metaChanged || !existsSync(atlasImagePath) || fileMtime(atlasImagePath) < newestStillInputMtime;
 if (stillNeedsEncode) {
-  console.log("[assets] encoding lossless still atlas (frame 1, PNG rgb24)...");
+  if (useCellularStill) {
+    // Blender's File Output node in OPEN_EXR_MULTILAYER mode names the
+    // cell's channels `screen_K.R/G/B/A`, but ffmpeg's openexr decoder
+    // only reads root-level R/G/B/A. Use oiiotool to rename each cell's
+    // channels to root-level into a temporary single-layer EXR before
+    // feeding the ffmpeg hstack invocation.
+    const flattenedCellsDir = join(compositeDir, ".cell-flat");
+    mkdirSync(flattenedCellsDir, { recursive: true });
+    const flattenedCellPaths: string[] = [];
+    console.log(`[assets] flattening ${cellCount} multilayer cell EXRs via oiiotool...`);
+    for (let cellIndex = 0; cellIndex < cellCount; cellIndex += 1) {
+      const sourcePath = cellFrameOnePaths[cellIndex];
+      const flatPath = join(flattenedCellsDir, `cell_${cellIndex}.exr`);
+      const flatten = spawnSync(
+        "oiiotool",
+        [
+          sourcePath,
+          "--ch",
+          `R=screen_${cellIndex}.R,G=screen_${cellIndex}.G,B=screen_${cellIndex}.B`,
+          "-o",
+          flatPath,
+        ],
+        { encoding: "utf8" },
+      );
+      if (flatten.status !== 0) {
+        console.error(`[assets] oiiotool flatten failed for ${sourcePath}:\n${flatten.stderr}`);
+        process.exit(flatten.status ?? 1);
+      }
+      flattenedCellPaths.push(flatPath);
+    }
 
-  const channelScaleStill = `colorchannelmixer=rr=${inverseScale}:gg=${inverseScale}:bb=${inverseScale}`;
-  const stillFilterGraph = [
-    `[0:v]format=gbrpf32le[beauty]`,
-    `[1:v]format=gbrpf32le,${channelScaleStill}[whitelight]`,
-    `[2:v]format=gbrpf32le,${channelScaleStill}[position]`,
-    `[beauty][whitelight][position]hstack=inputs=3,zscale=tin=linear:t=iec61966-2-1:m=709,format=rgb24[out]`,
-  ].join(";");
+    // Pack the (2 + N²) logical tiles into a TILE_COLS × TILE_ROWS grid
+    // (4 × 3 for N=3 → 12 slots, 11 used + 1 empty filled black) so
+    // neither output dimension exceeds the typical GPU MAX_TEXTURE_SIZE
+    // = 16384. With 1920×1080 renders the atlas is 7680×3240. Inputs
+    // are passed in order beauty/whitelight/s_0..s_8; xstack with an
+    // explicit `layout` fills row-major from the PNG top, which after
+    // the UNPACK_FLIP_Y_WEBGL upload puts beauty at v_uv.y near 1 —
+    // the shader's tileUv inverts the row direction to compensate.
+    const tileCount = 2 + cellCount;
+    const TILE_COLS = 4;
+    const TILE_ROWS = 3;
+    const tileDims = detectTileDimensions(exrPath("beauty", 1));
+    const layoutPositions: string[] = [];
+    for (let tileIndex = 0; tileIndex < tileCount; tileIndex += 1) {
+      const col = tileIndex % TILE_COLS;
+      const rowFromTop = Math.floor(tileIndex / TILE_COLS);
+      layoutPositions.push(`${col * tileDims.width}_${rowFromTop * tileDims.height}`);
+    }
+    const tileLayout = layoutPositions.join("|");
 
-  const stillResult = spawnSync(
-    "ffmpeg",
-    [
-      "-y",
-      "-hide_banner",
-      "-loglevel",
-      "warning",
-      "-i",
-      exrPath("beauty", 1),
-      "-i",
-      exrPath("whitelight", 1),
-      "-i",
-      exrPath("position", 1),
-      "-filter_complex",
-      stillFilterGraph,
-      "-map",
-      "[out]",
-      "-frames:v",
-      "1",
-      atlasImagePath,
-    ],
-    { stdio: "inherit" },
-  );
-  if (stillResult.status !== 0) {
-    console.error("[assets] ffmpeg still-atlas encode failed");
-    process.exit(stillResult.status ?? 1);
+    console.log(
+      `[assets] encoding cellular still atlas (frame 1, PNG rgb24, ${tileCount} tiles in ${TILE_COLS}×${TILE_ROWS} grid)...`,
+    );
+    const stillInputArgs: string[] = ["-i", exrPath("beauty", 1), "-i", exrPath("whitelight", 1)];
+    const filterParts: string[] = [
+      `[0:v]format=gbrpf32le[beauty]`,
+      `[1:v]format=gbrpf32le,${channelScaleStill}[whitelight]`,
+    ];
+    const labels: string[] = [`[beauty]`, `[whitelight]`];
+    for (let cellIndex = 0; cellIndex < cellCount; cellIndex += 1) {
+      stillInputArgs.push("-i", flattenedCellPaths[cellIndex]);
+      const labelName = `screen_${cellIndex}`;
+      const inputIndex = 2 + cellIndex;
+      filterParts.push(`[${inputIndex}:v]format=gbrpf32le,${channelScaleStill}[${labelName}]`);
+      labels.push(`[${labelName}]`);
+    }
+    filterParts.push(
+      `${labels.join("")}xstack=inputs=${tileCount}:layout=${tileLayout}:fill=black,zscale=tin=linear:t=iec61966-2-1:m=709,format=rgb24[out]`,
+    );
+    const stillFilterGraph = filterParts.join(";");
+
+    const stillResult = spawnSync(
+      "ffmpeg",
+      [
+        "-y",
+        "-hide_banner",
+        "-loglevel",
+        "warning",
+        ...stillInputArgs,
+        "-filter_complex",
+        stillFilterGraph,
+        "-map",
+        "[out]",
+        "-frames:v",
+        "1",
+        atlasImagePath,
+      ],
+      { stdio: "inherit" },
+    );
+    if (stillResult.status !== 0) {
+      console.error("[assets] ffmpeg cellular still-atlas encode failed");
+      process.exit(stillResult.status ?? 1);
+    }
+    console.log(`[assets] encoded cellular still atlas -> ${atlasImagePath}`);
+  } else {
+    console.log(
+      "[assets] cellular cell EXRs missing — encoding legacy 3-tile still atlas (frame 1, PNG rgb24)...",
+    );
+    const stillFilterGraph = [
+      `[0:v]format=gbrpf32le[beauty]`,
+      `[1:v]format=gbrpf32le,${channelScaleStill}[whitelight]`,
+      `[2:v]format=gbrpf32le,${channelScaleStill}[position]`,
+      `[beauty][whitelight][position]hstack=inputs=3,zscale=tin=linear:t=iec61966-2-1:m=709,format=rgb24[out]`,
+    ].join(";");
+
+    const stillResult = spawnSync(
+      "ffmpeg",
+      [
+        "-y",
+        "-hide_banner",
+        "-loglevel",
+        "warning",
+        "-i",
+        exrPath("beauty", 1),
+        "-i",
+        exrPath("whitelight", 1),
+        "-i",
+        exrPath("position", 1),
+        "-filter_complex",
+        stillFilterGraph,
+        "-map",
+        "[out]",
+        "-frames:v",
+        "1",
+        atlasImagePath,
+      ],
+      { stdio: "inherit" },
+    );
+    if (stillResult.status !== 0) {
+      console.error("[assets] ffmpeg legacy still-atlas encode failed");
+      process.exit(stillResult.status ?? 1);
+    }
+    console.log(`[assets] encoded legacy still atlas -> ${atlasImagePath}`);
   }
-  console.log(`[assets] encoded still atlas -> ${atlasImagePath}`);
 }
 
 // Metadata sidecar: the runtime fetches this and feeds the scale into the

@@ -26,7 +26,7 @@ import bmesh
 
 # === Configuration — edit, then Run Script ============
 CELLS_PER_SIDE = 3
-OUTPUT_DIRECTORY = "//render/cells/"  # Blender path syntax: // is .blend's folder
+OUTPUT_DIRECTORY = "//renders/cells/"  # Blender path syntax: // is .blend's folder
 # ======================================================
 
 SCREEN_NAME = "SCREEN"
