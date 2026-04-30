@@ -217,33 +217,30 @@ void main() {
   vec3 whitelight = srgbToLinear(texture(u_atlas, tileUv(1, v_uv)).rgb);
   vec2 atlasTexelSize = 1.0 / vec2(textureSize(u_atlas, 0));
 
-  // Continuous global emitter UV. Decompose the global screen-plane
-  // U coordinate as U_global(s) = (col_K(s) + within_U(s)) / N, then
-  // integrate against the wall pixel's geometric weighting g(s):
+  // Continuous global emitter UV, exact formula. Decomposing the
+  // global screen-plane U coordinate as U_global(s) = (col_K(s) +
+  // within_U(s)) / N and integrating against the wall pixel's
+  // geometric weighting g(s):
   //
   //   <U_global> = (∫g(s) * col_K(s) ds + ∫g(s) * within_U(s) ds) / (N * ∫g(s) ds)
   //              = (Σ_K col_K * intensity_K + Σ_K cell_K.r) / (N * whitelight)
   //
-  // The first term wants per-cell intensity_K. We don't have it
-  // directly (no per-cell white-light AOV), so estimate it via a
-  // soft-argmax: split whitelight across cells in proportion to a
-  // brightness proxy, here length(cell_K.rg). This degrades
-  // gracefully — when one cell dominates, intensity_K* ≈ whitelight
-  // and the formula collapses to (col_K* + <U>_K*) / N (i.e., the
-  // hard-argmax case). When two cells share, the soft split smoothly
-  // blends their grid positions, eliminating the 1-pixel discontinuity
-  // a hard argmax produces at cell boundaries.
+  // The cell material emits (within_U, within_V, 1) — the constant 1
+  // in B means cell_K.b at a wall pixel records intensity_K directly
+  // (the bounce-light contribution from cell K, with no within-cell
+  // UV factor). With that, every term in the formula is observable
+  // and there's no soft-blend approximation: Σ_K cell_K.b =
+  // whitelight (down to render noise) and Σ_K col_K * cell_K.b is
+  // computed by simple weighted accumulation in the loop below. The
+  // result is mathematically the same global emitter UV the old
+  // monolithic position pass would have given.
   //
-  // The second term — Σ_K cell_K.r / whitelight — is observable
-  // directly and rights the within-cell offset that pure cell-grid
-  // averaging would miss. Box-averaged in screen space by
-  // u_lookupBlurRadius (same uniform as before) so dim regions where
-  // any single pixel's whitelight is near zero stay stable instead of
-  // exploding into speckles. The fixed [-5..5] outer loop bounds keep
-  // loop bounds compile-time constant for older drivers; the runtime
-  // radius gates which iterations actually contribute.
+  // Box-averaged in screen space by u_lookupBlurRadius so dim regions
+  // where any single pixel's whitelight is near zero stay stable
+  // instead of exploding into speckles. Fixed [-5..5] outer loop
+  // bounds keep them compile-time constant for older drivers; the
+  // runtime radius gates which iterations actually contribute.
   vec2 weightedGridSum = vec2(0.0);
-  float totalCellBrightness = 0.0;
   vec2 totalCellRg = vec2(0.0);
   float whitelightSum = 0.0;
   int radius = u_lookupBlurRadius;
@@ -255,16 +252,12 @@ void main() {
       whitelightSum += srgbToLinear(texture(u_atlas, tileUv(1, v_uv) + offset).rgb).r;
       for (int K = 0; K < CELL_COUNT; K++) {
         vec3 cellSample = srgbToLinear(texture(u_atlas, tileUv(2 + K, v_uv) + offset).rgb);
-        float brightness = length(cellSample.rg);
-        weightedGridSum += vec2(cellGridPos(K)) * brightness;
-        totalCellBrightness += brightness;
+        weightedGridSum += vec2(cellGridPos(K)) * cellSample.b;
         totalCellRg += cellSample.rg;
       }
     }
   }
-  vec2 softGridPos = weightedGridSum / max(totalCellBrightness, 1.0e-3);
-  vec2 withinCorrection = totalCellRg / max(whitelightSum, 1.0e-3);
-  vec2 emitterUv = (softGridPos + withinCorrection) / float(N);
+  vec2 emitterUv = (weightedGridSum + totalCellRg) / max(whitelightSum * float(N), 1.0e-3);
 
   emitterUv = (emitterUv - 0.5) * u_uvStretch + 0.5 + u_uvOffset;
   vec2 inWindow = step(vec2(u_edgeCutoff), emitterUv) *
