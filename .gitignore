@@ -8,3 +8,4 @@ public/composite
 .cache
 .env
 *.tsbuildinfo
+blender/__pycache__
