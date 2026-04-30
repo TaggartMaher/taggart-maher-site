@@ -76,7 +76,7 @@ interface AtlasMeta {
   encoding: string;
 }
 
-const atlasEncoding = "cellular-srgb-v2";
+const atlasEncoding = "cellular-srgb-v3";
 
 function detectTileDimensions(samplePath: string): { width: number; height: number } {
   const result = spawnSync("oiiotool", ["--info", samplePath], { encoding: "utf8" });
@@ -195,22 +195,22 @@ for (const pass of passes) {
 }
 
 // Cellular still-atlas inputs. Cell EXRs live in
-// `$BLENDER_RENDERS_DIR/cells/`, alongside the beauty/whitelight/position
-// pass directories. Filename can be either `screen_K_.exr` (what
-// Blender 5.1's File Output node currently writes — the `####` padding
-// token doesn't substitute in multilayer EXR mode and leaves a trailing
-// underscore) or `screen_K_0001.exr` (the padded form, future-proof).
-// First match wins.
+// `$BLENDER_RENDERS_DIR/cells/`. Prefer the padded form
+// `screen_K_0001.exr` (correct Blender output, what the File Output
+// node writes once denoising data is enabled) over the unpadded
+// `screen_K_.exr` (older multilayer-EXR variant where `####` didn't
+// substitute) — both forms can coexist on disk during transition; we
+// always pick the more-correct padded one when available.
 const cellsDir = join(blenderRendersDir, "cells");
 const cellCount = cellsPerSide * cellsPerSide;
 const cellFrameOnePaths: string[] = [];
 let newestCellInputMtime = 0;
 for (let cellIndex = 0; cellIndex < cellCount; cellIndex += 1) {
-  const unpaddedPath = join(cellsDir, `screen_${cellIndex}_.exr`);
   const paddedPath = join(cellsDir, `screen_${cellIndex}_0001.exr`);
+  const unpaddedPath = join(cellsDir, `screen_${cellIndex}_.exr`);
   let resolvedPath: string | null = null;
-  if (existsSync(unpaddedPath)) resolvedPath = unpaddedPath;
-  else if (existsSync(paddedPath)) resolvedPath = paddedPath;
+  if (existsSync(paddedPath)) resolvedPath = paddedPath;
+  else if (existsSync(unpaddedPath)) resolvedPath = unpaddedPath;
   if (!resolvedPath) {
     console.warn(`[assets] cellular path: missing cell ${cellIndex} EXR in ${cellsDir}`);
     break;
