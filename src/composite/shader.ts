@@ -167,7 +167,7 @@ void main() {
   // perceptible sharpness in the lit image. We keep the un-blurred
   // whitelight for the final multiplication so the bounce falloff
   // itself stays crisp.
-  const int BLUR_RADIUS = 16;
+  const int BLUR_RADIUS = 1;
   const float BLUR_TAP_COUNT = float((2 * BLUR_RADIUS + 1) * (2 * BLUR_RADIUS + 1));
   vec2 atlasTexelSize = 1.0 / vec2(textureSize(u_atlas, 0));
   vec2 positionSum = vec2(0.0);

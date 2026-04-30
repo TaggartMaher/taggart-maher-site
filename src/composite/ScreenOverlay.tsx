@@ -49,10 +49,20 @@ async function renderHtmlElementToCanvas(
   const serializer = new XMLSerializer();
   const elementMarkup = serializer.serializeToString(element);
 
+  // Size the foreignObject to the live element's pixel size, not the
+  // texture canvas size. Window positions inside Portfolio are computed
+  // from the live container's getBoundingClientRect (see Portfolio.tsx),
+  // so the foreignObject must lay out at those same dimensions for the
+  // pixel coordinates to land in the right place. drawImage below
+  // stretches the result to the texture canvas.
+  const sourceRect = element.getBoundingClientRect();
+  const sourceWidth = Math.max(1, Math.round(sourceRect.width));
+  const sourceHeight = Math.max(1, Math.round(sourceRect.height));
+
   const svg =
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${canvas.width}" height="${canvas.height}">` +
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${sourceWidth}" height="${sourceHeight}">` +
     `<foreignObject width="100%" height="100%">` +
-    `<div xmlns="http://www.w3.org/1999/xhtml" style="width:${canvas.width}px;height:${canvas.height}px;background:#fafafa;overflow:hidden;">` +
+    `<div xmlns="http://www.w3.org/1999/xhtml" style="width:${sourceWidth}px;height:${sourceHeight}px;background:#fafafa;overflow:hidden;">` +
     `<style>${styleText}</style>` +
     elementMarkup +
     `</div>` +

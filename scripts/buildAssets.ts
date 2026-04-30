@@ -25,9 +25,12 @@
 // Idempotent: rebuilds only when any EXR is newer than atlas.mp4 or when
 // the detected scale / encoding tag changes.
 //
-// If BLENDER_RENDERS_DIR is unset or any pass directory / frame is missing,
-// the script logs a warning and exits 0 — the site falls back to the no-CGI
-// path at runtime. Asset build never fails the dev or production build.
+// If BLENDER_RENDERS_DIR is unset or frame 1 is missing for any pass, the
+// script logs a warning and exits 0 — the site falls back to the no-CGI
+// path at runtime. If frame 1 is present but the full video sequence is
+// not, the still PNG atlas is built and the video is skipped (the runtime
+// can still drive the lossless-image debug path). Asset build never fails
+// the dev or production build.
 //
 // Tooling: requires ffmpeg built with libzimg (the `zscale` filter) for the
 // linear → sRGB OETF + BT.709 matrix conversion, and oiiotool for the
@@ -38,6 +41,15 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 import { frameCount, fps } from "../src/config";
+
+// Load BLENDER_RENDERS_DIR (and friends) from the repo's .env so the script
+// works the same whether invoked directly or via an npm script. Silent if
+// .env is absent — the BLENDER_RENDERS_DIR check below handles that case.
+try {
+  process.loadEnvFile(join(dirname(fileURLToPath(import.meta.url)), "..", ".env"));
+} catch {
+  /* .env not present — fall through to env-var check */
+}
 
 const passes = ["beauty", "whitelight", "position"] as const;
 
@@ -131,26 +143,45 @@ function fileMtime(path: string): number {
   return statSync(path).mtimeMs;
 }
 
-// Step 0: verify every pass directory has the right number of frames, and
-// track the newest input mtime for the cache check.
-let allInputsPresent = true;
-let newestInputMtime = 0;
+// Step 0: check inputs. The still atlas only needs frame 1 of each pass;
+// the video atlas needs the full sequence. Track the newest mtime per
+// scope so each output's cache check uses the right input set.
+let stillInputsPresent = true;
+let videoInputsPresent = true;
+let newestStillInputMtime = 0;
+let newestVideoInputMtime = 0;
 for (const pass of passes) {
   const passDirectory = join(blenderRendersDir, pass);
   if (!existsSync(passDirectory)) {
     console.warn(`[assets] missing pass directory: ${passDirectory}`);
-    allInputsPresent = false;
+    stillInputsPresent = false;
+    videoInputsPresent = false;
     continue;
   }
-  for (let frameIndex = 1; frameIndex <= frameCount; frameIndex += 1) {
-    const mtime = fileMtime(exrPath(pass, frameIndex));
-    if (mtime > newestInputMtime) newestInputMtime = mtime;
+  const frameOnePath = exrPath(pass, 1);
+  if (!existsSync(frameOnePath)) {
+    console.warn(`[assets] missing frame 1: ${frameOnePath}`);
+    stillInputsPresent = false;
+    videoInputsPresent = false;
+  } else {
+    const frameOneMtime = fileMtime(frameOnePath);
+    if (frameOneMtime > newestStillInputMtime) newestStillInputMtime = frameOneMtime;
+    if (frameOneMtime > newestVideoInputMtime) newestVideoInputMtime = frameOneMtime;
+  }
+  for (let frameIndex = 2; frameIndex <= frameCount; frameIndex += 1) {
+    const path = exrPath(pass, frameIndex);
+    if (!existsSync(path)) {
+      videoInputsPresent = false;
+      continue;
+    }
+    const mtime = fileMtime(path);
+    if (mtime > newestVideoInputMtime) newestVideoInputMtime = mtime;
   }
 }
 
-if (!allInputsPresent) {
+if (!stillInputsPresent) {
   console.warn(
-    "[assets] inputs incomplete — skipping atlas build. Site will run in fallback mode.",
+    "[assets] frame 1 inputs incomplete — skipping atlas build. Site will run in fallback mode.",
   );
   process.exit(0);
 }
@@ -164,9 +195,13 @@ const scaleChanged = previousMeta === null || Math.abs(previousMeta.scale - atla
 const encodingChanged = previousMeta === null || previousMeta.encoding !== atlasEncoding;
 const metaChanged = scaleChanged || encodingChanged;
 
-let needsEncode = true;
-if (!metaChanged && existsSync(atlasPath)) {
-  if (fileMtime(atlasPath) >= newestInputMtime) {
+let needsEncode = videoInputsPresent;
+if (!videoInputsPresent) {
+  console.warn(
+    `[assets] video frame sequence incomplete (need ${frameCount} frames per pass) — skipping mp4 atlas, building still atlas only.`,
+  );
+} else if (!metaChanged && existsSync(atlasPath)) {
+  if (fileMtime(atlasPath) >= newestVideoInputMtime) {
     needsEncode = false;
     console.log(`[assets] atlas up to date at ${atlasPath}`);
   }
@@ -252,7 +287,8 @@ if (needsEncode) {
 // MP4 in debug mode to eliminate the H.264 + 4:2:0 chroma artifacts that
 // affect the position pass on edge bounces. Rebuilt whenever the video
 // atlas is rebuilt, or when the PNG is missing.
-const stillNeedsEncode = needsEncode || !existsSync(atlasImagePath);
+const stillNeedsEncode =
+  metaChanged || !existsSync(atlasImagePath) || fileMtime(atlasImagePath) < newestStillInputMtime;
 if (stillNeedsEncode) {
   console.log("[assets] encoding lossless still atlas (frame 1, PNG rgb24)...");
 
