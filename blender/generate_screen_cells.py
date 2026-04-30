@@ -20,12 +20,12 @@ Assumes the .blend has:
   - render engine: Cycles (light groups don't exist on EEVEE)
 """
 
-import bpy
-import bmesh
+import bpy # type: ignore
+import bmesh # type: ignore
 
 
 # === Configuration — edit, then Run Script ============
-CELLS_PER_SIDE = 3
+CELLS_PER_SIDE = 9
 OUTPUT_DIRECTORY = "//renders/cells/"  # Blender path syntax: // is .blend's folder
 # ======================================================
 
