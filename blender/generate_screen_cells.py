@@ -165,6 +165,15 @@ def setup_cell_compositor(output_directory):
         print(f"[warn] view layer '{CELL_VIEW_LAYER_NAME}' not found — skipping compositor setup")
         return
 
+    # Denoising guidance passes. The Denoise compositor node takes
+    # Image / Normal / Albedo, and quality with all three plugged in is
+    # noticeably better than RGB-only — especially at the low sample
+    # counts a per-cell pass can afford. Enabling this on the view
+    # layer adds "Denoising Normal" and "Denoising Albedo" outputs to
+    # the render layers node, which the per-cell loop below wires into
+    # each Denoise node alongside its lightgroup-specific Combined input.
+    view_layer.cycles.denoising_store_passes = True
+
     cell_groups = sorted(
         light_group.name for light_group in view_layer.lightgroups
         if light_group.name.startswith(LIGHT_GROUP_PREFIX)
@@ -191,6 +200,18 @@ def setup_cell_compositor(output_directory):
     render_layers_node.label = "cells: Position view layer"
     render_layers_node.layer = CELL_VIEW_LAYER_NAME
     render_layers_node.location = (-600, -400)
+
+    # Same denoising guidance feeds every cell's Denoise node — the
+    # geometry doesn't change per light group, so Normal and Albedo
+    # are shared across all 9 wirings.
+    denoise_normal_socket = render_layers_node.outputs.get("Denoising Normal")
+    denoise_albedo_socket = render_layers_node.outputs.get("Denoising Albedo")
+    if denoise_normal_socket is None or denoise_albedo_socket is None:
+        print(
+            "[warn] denoising data sockets missing from render layers node — re-run after"
+            " enabling 'Denoising Data' on the view layer (or save + reopen the .blend if"
+            " they don't appear immediately)"
+        )
 
     connected = 0
     missing = []
@@ -222,6 +243,10 @@ def setup_cell_compositor(output_directory):
             render_layers_node.outputs[socket_name],
             denoise_node.inputs["Image"],
         )
+        if denoise_normal_socket is not None:
+            node_tree.links.new(denoise_normal_socket, denoise_node.inputs["Normal"])
+        if denoise_albedo_socket is not None:
+            node_tree.links.new(denoise_albedo_socket, denoise_node.inputs["Albedo"])
         node_tree.links.new(
             denoise_node.outputs["Image"],
             file_output_node.inputs[group_name],
