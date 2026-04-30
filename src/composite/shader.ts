@@ -194,21 +194,22 @@ vec2 tileUv(int tileIndex, vec2 uv) {
   );
 }
 
-float cellBrightnessAt(int cellIndex, vec2 uv, vec2 atlasTexelSize) {
-  float total = 0.0;
-  int radius = u_lookupBlurRadius;
-  for (int dy = -5; dy <= 5; dy++) {
-    if (dy < -radius || dy > radius) continue;
-    for (int dx = -5; dx <= 5; dx++) {
-      if (dx < -radius || dx > radius) continue;
-      vec2 offset = vec2(float(dx), float(dy)) * atlasTexelSize;
-      vec3 cellSample = srgbToLinear(texture(u_atlas, tileUv(2 + cellIndex, uv) + offset).rgb);
-      // Tap counts cancel inside argmax, so the sum can stand in for
-      // the true average — saves one float divide per cell.
-      total += length(cellSample.rg);
-    }
-  }
-  return total;
+// Empirical bmesh face order for CELLS_PER_SIDE=3, written down by
+// dragging the debug square and observing which cell's region lights
+// up. Indexed by face_index K (= shader cellIndex). Stored as ivec2(col,
+// row) in the screen plane's UV space, where row 0 = bottom (V-up).
+// File-scope so both the soft-blend integrator and the rest of main()
+// can read it.
+ivec2 cellGridPos(int cellIndex) {
+  if (cellIndex == 0) return ivec2(0, 2);  // TL
+  if (cellIndex == 1) return ivec2(0, 0);  // BL
+  if (cellIndex == 2) return ivec2(0, 1);  // ML
+  if (cellIndex == 3) return ivec2(2, 0);  // BR
+  if (cellIndex == 4) return ivec2(1, 0);  // BM
+  if (cellIndex == 5) return ivec2(2, 1);  // MR
+  if (cellIndex == 6) return ivec2(1, 1);  // MM
+  if (cellIndex == 7) return ivec2(2, 2);  // TR
+  return ivec2(1, 2);                      // TM (cellIndex == 8)
 }
 
 void main() {
@@ -216,70 +217,54 @@ void main() {
   vec3 whitelight = srgbToLinear(texture(u_atlas, tileUv(1, v_uv)).rgb);
   vec2 atlasTexelSize = 1.0 / vec2(textureSize(u_atlas, 0));
 
-  // Argmax over the N² cell AOVs at this pixel. The winning cell's
-  // centroid in the screen plane's UV space is the discrete emitter
-  // position — one of N² fixed points (the cells' centers).
-  int dominantCell = 0;
-  float bestBrightness = -1.0;
-  for (int cellIndex = 0; cellIndex < CELL_COUNT; cellIndex++) {
-    float brightness = cellBrightnessAt(cellIndex, v_uv, atlasTexelSize);
-    if (brightness > bestBrightness) {
-      bestBrightness = brightness;
-      dominantCell = cellIndex;
-    }
-  }
-
-  // Empirical bmesh face order for CELLS_PER_SIDE=3 (verified by
-  // dragging the debug square and watching which cell's region lights
-  // up). Stored as (col, row) in the screen plane's UV space, where
-  // row 0 = bottom (V-up). Hard-coded for the prototype — bumping N
-  // requires re-deriving this table.
-  ivec2 cellGridPositions[9] = ivec2[9](
-    ivec2(0, 2),  // K=0  TL
-    ivec2(0, 0),  // K=1  BL
-    ivec2(0, 1),  // K=2  ML
-    ivec2(2, 0),  // K=3  BR
-    ivec2(1, 0),  // K=4  BM
-    ivec2(2, 1),  // K=5  MR
-    ivec2(1, 1),  // K=6  MM
-    ivec2(2, 2),  // K=7  TR
-    ivec2(1, 2)   // K=8  TM
-  );
-  ivec2 gridPos = cellGridPositions[dominantCell];
-
-  // Within-cell UV decode. The dominant cell's R/G channels encode
-  // (intensity * within_cell_U, intensity * within_cell_V) at this
-  // wall pixel — a UV-stretch-to-fit emission gives each cell a local
-  // [0,1]² texture coordinate, weighted by the cell's bounce-light
-  // contribution. Whitelight is the un-segmented bounce intensity
-  // (sum over all cells), and where the dominant cell dominates the
-  // bounce locally, whitelight ≈ intensity_dominant. So the ratio
-  // dominant.rg / whitelight.r recovers the average within-cell UV
-  // — same algebra as the old position/whitelight pass, just per-cell.
-  // Box-average numerator and denominator separately for the same
-  // reason as the old shader: dim regions where the per-pixel
-  // whitelight is near zero make the ratio explode into speckles
-  // unless smoothed first. Use the same u_lookupBlurRadius as the
-  // argmax pass so the two stages agree on neighborhood size.
-  vec2 cellRgSum = vec2(0.0);
+  // Continuous global emitter UV. Decompose the global screen-plane
+  // U coordinate as U_global(s) = (col_K(s) + within_U(s)) / N, then
+  // integrate against the wall pixel's geometric weighting g(s):
+  //
+  //   <U_global> = (∫g(s) * col_K(s) ds + ∫g(s) * within_U(s) ds) / (N * ∫g(s) ds)
+  //              = (Σ_K col_K * intensity_K + Σ_K cell_K.r) / (N * whitelight)
+  //
+  // The first term wants per-cell intensity_K. We don't have it
+  // directly (no per-cell white-light AOV), so estimate it via a
+  // soft-argmax: split whitelight across cells in proportion to a
+  // brightness proxy, here length(cell_K.rg). This degrades
+  // gracefully — when one cell dominates, intensity_K* ≈ whitelight
+  // and the formula collapses to (col_K* + <U>_K*) / N (i.e., the
+  // hard-argmax case). When two cells share, the soft split smoothly
+  // blends their grid positions, eliminating the 1-pixel discontinuity
+  // a hard argmax produces at cell boundaries.
+  //
+  // The second term — Σ_K cell_K.r / whitelight — is observable
+  // directly and rights the within-cell offset that pure cell-grid
+  // averaging would miss. Box-averaged in screen space by
+  // u_lookupBlurRadius (same uniform as before) so dim regions where
+  // any single pixel's whitelight is near zero stay stable instead of
+  // exploding into speckles. The fixed [-5..5] outer loop bounds keep
+  // loop bounds compile-time constant for older drivers; the runtime
+  // radius gates which iterations actually contribute.
+  vec2 weightedGridSum = vec2(0.0);
+  float totalCellBrightness = 0.0;
+  vec2 totalCellRg = vec2(0.0);
   float whitelightSum = 0.0;
-  int decodeRadius = u_lookupBlurRadius;
+  int radius = u_lookupBlurRadius;
   for (int dy = -5; dy <= 5; dy++) {
-    if (dy < -decodeRadius || dy > decodeRadius) continue;
+    if (dy < -radius || dy > radius) continue;
     for (int dx = -5; dx <= 5; dx++) {
-      if (dx < -decodeRadius || dx > decodeRadius) continue;
+      if (dx < -radius || dx > radius) continue;
       vec2 offset = vec2(float(dx), float(dy)) * atlasTexelSize;
-      vec3 cellSample = srgbToLinear(texture(u_atlas, tileUv(2 + dominantCell, v_uv) + offset).rgb);
-      vec3 wlSample = srgbToLinear(texture(u_atlas, tileUv(1, v_uv) + offset).rgb);
-      cellRgSum += cellSample.rg;
-      whitelightSum += wlSample.r;
+      whitelightSum += srgbToLinear(texture(u_atlas, tileUv(1, v_uv) + offset).rgb).r;
+      for (int K = 0; K < CELL_COUNT; K++) {
+        vec3 cellSample = srgbToLinear(texture(u_atlas, tileUv(2 + K, v_uv) + offset).rgb);
+        float brightness = length(cellSample.rg);
+        weightedGridSum += vec2(cellGridPos(K)) * brightness;
+        totalCellBrightness += brightness;
+        totalCellRg += cellSample.rg;
+      }
     }
   }
-  vec2 withinCellUv = clamp(cellRgSum / max(whitelightSum, 1.0e-3), 0.0, 1.0);
-
-  // Absolute screen-plane UV: cell's grid origin in [0,N]² plus the
-  // within-cell offset in [0,1]², all scaled into [0,1]².
-  vec2 emitterUv = (vec2(gridPos) + withinCellUv) / float(N);
+  vec2 softGridPos = weightedGridSum / max(totalCellBrightness, 1.0e-3);
+  vec2 withinCorrection = totalCellRg / max(whitelightSum, 1.0e-3);
+  vec2 emitterUv = (softGridPos + withinCorrection) / float(N);
 
   emitterUv = (emitterUv - 0.5) * u_uvStretch + 0.5 + u_uvOffset;
   vec2 inWindow = step(vec2(u_edgeCutoff), emitterUv) *
