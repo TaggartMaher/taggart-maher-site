@@ -13,7 +13,7 @@ export const fps = 24;
 // AOV. The shader hard-codes the same N as `const int N` for argmax
 // over (2 + N²) atlas tiles — bumping this value requires a code change
 // on both sides, not just a config tweak.
-export const cellsPerSide = 3;
+export const cellsPerSide = 9;
 
 // Render output aspect (width / height). Update if the Blender output
 // resolution changes.
