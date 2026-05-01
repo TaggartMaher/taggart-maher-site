@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
-import { atlasImagePath, cellsPerSide } from "../config";
+import { beautyImagePath, positionImagePath } from "../config";
+import { decodeExr } from "./decodeExr";
 import type { PerfMetrics } from "./perfMetrics";
 import {
   downsampleFragmentShaderSource,
@@ -13,15 +14,18 @@ import {
 // edge length.
 const MAX_BLUR_CHAIN_DEPTH = 6;
 
+const BEAUTY_UNIT = 0;
+const SCREEN_UNIT = 1;
+const POSITION_UNIT = 2;
+const BLUR_OUTPUT_UNIT = 3;
+const BLUR_READ_UNIT = 4;
+
 interface CompositorProps {
   // Canvas the compositor uploads as `u_screen` each frame.
   screenSourceCanvasRef: React.RefObject<HTMLCanvasElement | null>;
   // Effective blur radius (in screen-texture pixels) applied to the
   // screen-content image before compositing. 0 disables the blur.
   screenBlurRadiusPx: number;
-  // Box-average radius (in atlas texels) applied to the per-cell
-  // accumulation. Smooths cell-boundary flicker; 0 disables.
-  lookupBlurRadius: number;
   // Per-axis linear stretch around (0.5, 0.5) applied to emitterUv.
   uStretch: number;
   vStretch: number;
@@ -73,7 +77,6 @@ function linkProgram(
 export function Compositor({
   screenSourceCanvasRef,
   screenBlurRadiusPx,
-  lookupBlurRadius,
   uStretch,
   vStretch,
   uOffset,
@@ -85,11 +88,9 @@ export function Compositor({
   perfMetricsRef,
 }: CompositorProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const imageRef = useRef<HTMLImageElement | null>(null);
+  const beautyImageRef = useRef<HTMLImageElement | null>(null);
   const screenBlurRadiusPxRef = useRef(screenBlurRadiusPx);
   screenBlurRadiusPxRef.current = screenBlurRadiusPx;
-  const lookupBlurRadiusRef = useRef(lookupBlurRadius);
-  lookupBlurRadiusRef.current = lookupBlurRadius;
   const uStretchRef = useRef(uStretch);
   uStretchRef.current = uStretch;
   const vStretchRef = useRef(vStretch);
@@ -109,8 +110,8 @@ export function Compositor({
 
   useEffect(() => {
     const canvas = canvasRef.current;
-    const image = imageRef.current;
-    if (!canvas || !image) return;
+    const beautyImage = beautyImageRef.current;
+    if (!canvas || !beautyImage) return;
 
     const gl = canvas.getContext("webgl2", { antialias: false, premultipliedAlpha: false });
     if (!gl) {
@@ -139,17 +140,15 @@ export function Compositor({
     gl.deleteShader(upsampleFragmentShader);
 
     const positionAttribLocation = 0;
-    const atlasUniformLocation = gl.getUniformLocation(program, "u_atlas");
+    const beautyUniformLocation = gl.getUniformLocation(program, "u_beauty");
+    const positionUniformLocation = gl.getUniformLocation(program, "u_position");
     const screenUniformLocation = gl.getUniformLocation(program, "u_screen");
-    const scaleUniformLocation = gl.getUniformLocation(program, "u_scale");
     const uvStretchUniformLocation = gl.getUniformLocation(program, "u_uvStretch");
     const uvOffsetUniformLocation = gl.getUniformLocation(program, "u_uvOffset");
     const edgeCutoffUniformLocation = gl.getUniformLocation(program, "u_edgeCutoff");
     const screenSaturationUniformLocation = gl.getUniformLocation(program, "u_screenSaturation");
     const screenContrastUniformLocation = gl.getUniformLocation(program, "u_screenContrast");
     const screenBrightnessUniformLocation = gl.getUniformLocation(program, "u_screenBrightness");
-    const lookupBlurRadiusUniformLocation = gl.getUniformLocation(program, "u_lookupBlurRadius");
-    const cellGridUniformLocation = gl.getUniformLocation(program, "u_cellGrid[0]");
     const downsampleSourceUniformLocation = gl.getUniformLocation(downsampleProgram, "u_source");
     const downsampleHalfPixelUniformLocation = gl.getUniformLocation(
       downsampleProgram,
@@ -186,8 +185,9 @@ export function Compositor({
       return texture;
     }
 
-    const atlasTexture = makeTexture(0);
-    const screenTexture = makeTexture(1);
+    const beautyTexture = makeTexture(BEAUTY_UNIT);
+    const screenTexture = makeTexture(SCREEN_UNIT);
+    const positionTexture = makeTexture(POSITION_UNIT);
 
     // Dual-Kawase blur chain. Level 0 is the screen source's native
     // resolution; each level halves both axes. Downsample writes
@@ -195,9 +195,6 @@ export function Compositor({
     // BLUR_OUTPUT_UNIT is where level 0 (the final blurred image) is
     // bound for the composite to sample; BLUR_READ_UNIT is the dynamic
     // source unit each pass binds its read-from level into.
-    const BLUR_READ_UNIT = 4;
-    const BLUR_OUTPUT_UNIT = 3;
-
     interface BlurLevel {
       texture: WebGLTexture;
       framebuffer: WebGLFramebuffer;
@@ -267,7 +264,8 @@ export function Compositor({
 
     let cancelled = false;
     let animationFrameHandle: number | null = null;
-    let atlasImageUploaded = false;
+    let beautyImageUploaded = false;
+    let positionTextureReady = false;
 
     const timerQueryExtension = gl.getExtension("EXT_disjoint_timer_query_webgl2");
     const pendingTimerQueries: WebGLQuery[] = [];
@@ -317,44 +315,41 @@ export function Compositor({
       }
     }
 
-    // E from the build pipeline (cells were divided by 1/E to fit
-    // [0,1]); the shader multiplies the bounce term back by it.
-    // 1 until atlasMeta.json arrives.
-    let atlasScale = 1;
-
-    // Per-cell screen-plane (col, row), uploaded as ivec2[CELL_COUNT].
-    // Identity until atlasMeta.json overwrites it.
-    const cellCount = cellsPerSide * cellsPerSide;
-    const cellGridUniformData = new Int32Array(cellCount * 2);
-    for (let cellIndex = 0; cellIndex < cellCount; cellIndex += 1) {
-      cellGridUniformData[cellIndex * 2] = cellIndex % cellsPerSide;
-      cellGridUniformData[cellIndex * 2 + 1] = Math.floor(cellIndex / cellsPerSide);
-    }
-
-    fetch("/composite/atlasMeta.json")
-      .then((response) => (response.ok ? response.json() : null))
-      .then((meta: { scale?: number; cellGrid?: Array<[number, number]> } | null) => {
-        if (meta && typeof meta.scale === "number") {
-          atlasScale = meta.scale;
-        } else {
-          console.warn(
-            "[compositor] atlasMeta.json missing or invalid — bounce magnitude uncorrected",
-          );
+    fetch(positionImagePath)
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error(`fetch returned status ${response.status}`);
         }
-        if (meta && Array.isArray(meta.cellGrid) && meta.cellGrid.length === cellCount) {
-          for (let cellIndex = 0; cellIndex < cellCount; cellIndex += 1) {
-            const entry = meta.cellGrid[cellIndex];
-            cellGridUniformData[cellIndex * 2] = entry[0];
-            cellGridUniformData[cellIndex * 2 + 1] = entry[1];
-          }
-        } else {
-          console.warn(
-            "[compositor] atlasMeta.cellGrid missing or wrong length — screen-content lookup will use identity ordering",
-          );
-        }
+        return response.arrayBuffer();
+      })
+      .then((buffer) => {
+        if (cancelled || !gl) return;
+        const decoded = decodeExr(buffer);
+        // The decoder already Y-flips during assembly. The WebGL spec
+        // says UNPACK_FLIP_Y_WEBGL is ignored for ArrayBufferView, but
+        // some implementations flip anyway and would invert this
+        // upload. Force it off here, then restore the global default
+        // (true) for the next HTMLImageElement upload.
+        gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+        gl.activeTexture(gl.TEXTURE0 + POSITION_UNIT);
+        gl.bindTexture(gl.TEXTURE_2D, positionTexture);
+        gl.texImage2D(
+          gl.TEXTURE_2D,
+          0,
+          gl.RGBA16F,
+          decoded.width,
+          decoded.height,
+          0,
+          gl.RGBA,
+          gl.HALF_FLOAT,
+          decoded.rgbaHalfFloats,
+        );
+        gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+        positionTextureReady = true;
+        maybeStartRendering();
       })
       .catch((error) => {
-        console.warn("[compositor] failed to fetch atlasMeta.json:", error);
+        console.warn("[compositor] failed to load position.exr:", error);
       });
 
     function resizeCanvasToViewport(): void {
@@ -370,7 +365,7 @@ export function Compositor({
     }
 
     function renderFrame(): void {
-      if (cancelled || !gl || !canvas || !image) return;
+      if (cancelled || !gl || !canvas || !beautyImage) return;
 
       const cpuStartMs = performance.now();
       recentFrameTimestamps.push(cpuStartMs);
@@ -388,24 +383,22 @@ export function Compositor({
         }
       }
 
-      // Atlas is static; upload once when first ready.
-      if (!atlasImageUploaded && image.complete && image.naturalWidth > 0) {
-        gl.activeTexture(gl.TEXTURE0);
-        gl.bindTexture(gl.TEXTURE_2D, atlasTexture);
-        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, image);
-        atlasImageUploaded = true;
+      if (!beautyImageUploaded && beautyImage.complete && beautyImage.naturalWidth > 0) {
+        gl.activeTexture(gl.TEXTURE0 + BEAUTY_UNIT);
+        gl.bindTexture(gl.TEXTURE_2D, beautyTexture);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, beautyImage);
+        beautyImageUploaded = true;
       }
 
-      // Upload the latest screen-content frame each rAF tick.
       const screenSource = screenSourceCanvasRef.current;
       if (!screenSource) return;
-      gl.activeTexture(gl.TEXTURE1);
+      gl.activeTexture(gl.TEXTURE0 + SCREEN_UNIT);
       gl.bindTexture(gl.TEXTURE_2D, screenTexture);
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, screenSource);
 
       // Run the dual-Kawase blur chain if radius > 0. The composite
       // below samples the final blurred result from BLUR_OUTPUT_UNIT
-      // instead of unit 1.
+      // instead of the raw screen unit.
       //
       // Effective radius scales as ~(2^chainDepth) × kernelOffset
       // source pixels. Pick chainDepth = round(log2 R) (clamped) and
@@ -475,17 +468,15 @@ export function Compositor({
 
       gl.useProgram(program);
       gl.bindVertexArray(vertexArrayObject);
-      gl.uniform1i(atlasUniformLocation, 0);
-      gl.uniform1i(screenUniformLocation, blurEnabled ? BLUR_OUTPUT_UNIT : 1);
-      gl.uniform1f(scaleUniformLocation, atlasScale);
+      gl.uniform1i(beautyUniformLocation, BEAUTY_UNIT);
+      gl.uniform1i(positionUniformLocation, POSITION_UNIT);
+      gl.uniform1i(screenUniformLocation, blurEnabled ? BLUR_OUTPUT_UNIT : SCREEN_UNIT);
       gl.uniform2f(uvStretchUniformLocation, uStretchRef.current, vStretchRef.current);
       gl.uniform2f(uvOffsetUniformLocation, uOffsetRef.current, vOffsetRef.current);
       gl.uniform1f(edgeCutoffUniformLocation, edgeCutoffRef.current);
       gl.uniform1f(screenSaturationUniformLocation, screenSaturationRef.current);
       gl.uniform1f(screenContrastUniformLocation, screenContrastRef.current);
       gl.uniform1f(screenBrightnessUniformLocation, screenBrightnessRef.current);
-      gl.uniform1i(lookupBlurRadiusUniformLocation, lookupBlurRadiusRef.current);
-      gl.uniform2iv(cellGridUniformLocation, cellGridUniformData);
       gl.drawArrays(gl.TRIANGLES, 0, 6);
       gl.bindVertexArray(null);
 
@@ -512,24 +503,30 @@ export function Compositor({
       });
     }
 
-    function handleImageReady(): void {
+    let renderingStarted = false;
+    function maybeStartRendering(): void {
+      if (renderingStarted || !beautyImage) return;
+      const beautyReady = beautyImage.complete && beautyImage.naturalWidth > 0;
+      if (!beautyReady || !positionTextureReady) return;
+      renderingStarted = true;
       scheduleNextFrame();
     }
 
-    if (image.complete && image.naturalWidth > 0) {
-      handleImageReady();
+    if (beautyImage.complete && beautyImage.naturalWidth > 0) {
+      maybeStartRendering();
     } else {
-      image.addEventListener("load", handleImageReady, { once: true });
+      beautyImage.addEventListener("load", maybeStartRendering, { once: true });
     }
 
     return () => {
       cancelled = true;
-      image.removeEventListener("load", handleImageReady);
+      beautyImage.removeEventListener("load", maybeStartRendering);
       if (animationFrameHandle !== null) {
         cancelAnimationFrame(animationFrameHandle);
       }
-      gl.deleteTexture(atlasTexture);
+      gl.deleteTexture(beautyTexture);
       gl.deleteTexture(screenTexture);
+      gl.deleteTexture(positionTexture);
       for (const level of blurLevels) {
         gl.deleteTexture(level.texture);
         gl.deleteFramebuffer(level.framebuffer);
@@ -547,8 +544,8 @@ export function Compositor({
     <>
       <canvas ref={canvasRef} className="compositor-canvas" />
       <img
-        ref={imageRef}
-        src={atlasImagePath}
+        ref={beautyImageRef}
+        src={beautyImagePath}
         alt=""
         crossOrigin="anonymous"
         style={{ display: "none" }}

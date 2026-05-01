@@ -3,16 +3,13 @@
 
 import { computeScreenRect, type CameraPose, type ScreenPlane } from "./screenRect";
 
-// Side length of the N×N screen-cell grid. Must match
-// blender/generate_screen_cells.py's `CELLS_PER_SIDE`.
-export const cellsPerSide = 9;
-
-// Atlas packs (1 + cellsPerSide²) tiles — beauty plus one per cell —
-// into a row-major grid. Build script and shader both derive their
-// layout from these.
-export const tileCount = 1 + cellsPerSide * cellsPerSide;
-export const tileCols = Math.ceil(Math.sqrt(tileCount));
-export const tileRows = Math.ceil(tileCount / tileCols);
+// Side length of the N×N screen-cell grid. Sourced from .env
+// (CELLS_PER_SIDE), exposed to the client by Vite's envPrefix. Must
+// match the value the Rust bake binary and Blender script read from
+// the same .env.
+const cellsPerSideRaw = Number(import.meta.env.CELLS_PER_SIDE);
+export const cellsPerSide =
+  Number.isFinite(cellsPerSideRaw) && cellsPerSideRaw > 0 ? cellsPerSideRaw : 9;
 
 // Render output aspect (width / height).
 export const renderAspect = 16 / 9;
@@ -40,5 +37,7 @@ export const screenPlane: ScreenPlane = {
 
 export const screenRect = computeScreenRect(cameraPose, screenPlane, renderAspect);
 
-// Atlas built by scripts/buildAssets.ts and served from public/composite/.
-export const atlasImagePath = "/composite/atlas.png";
+// Built by the Rust bake binary (scripts/bake-textures/) and served
+// from public/composite/.
+export const beautyImagePath = "/composite/beauty.png";
+export const positionImagePath = "/composite/position.exr";

@@ -4,133 +4,131 @@ The trick: a 3D scene rendered in Blender Cycles has a "screen" object
 whose content is alive at runtime. The user can paint anything onto it
 in a 2D canvas — a draggable square, an HTML render, an image — and the
 scene's bounce light responds positionally, as if the screen had really
-emitted that content. No re-rendering. A single fragment shader recovers
-the emitter UV per pixel from a handful of pre-rendered Cycles
-light-group AOVs and composites the result.
+emitted that content. No re-rendering. A single fragment shader samples
+two pre-baked textures and composites the result.
 
-## The math
+## Two textures
 
-The screen plane is subdivided into an `N × N` grid of cells. Each cell
-is a separate object with its own Cycles light group; the shared
-material emits
+The runtime input is exactly two files:
+
+- `public/composite/beauty.png` — 8-bit sRGB, the scene rendered with
+  the screen emitter off; the additive base of the composite.
+- `public/composite/position.exr` — RGBA half-float (uncompressed
+  scanline EXR). For each output pixel: `R = emitter U`,
+  `G = emitter V`, `B = whitelight` (linear scene-referred bounce
+  intensity), `A = 1`.
+
+That is the entire data dependency. There is no JSON sidecar, no atlas,
+no per-cell uniform.
+
+## Runtime composite
+
+For each output pixel the shader does
+
+```
+final = beauty + sample(userScreen, emitterUv) * whitelight
+```
+
+with `emitterUv` and `whitelight` read directly from `position.exr`.
+`whitelight` is scene-referred (no `1/E` pre-scale), so the bounce
+contribution comes out correct without a runtime scale multiplier.
+Implemented in `src/composite/shader.ts`.
+
+## Build-time math
+
+Cycles renders one EXR per "cell" of the screen plane. The screen is
+subdivided into an `N × N` grid; each cell is a separate object with
+its own light group; the shared material emits
 
 ```
 (within_U, within_V, 1) × E
 ```
 
-where `(within_U, within_V)` is the local UV inside the cell (the cell's
-UV unwrap is stretched to fill `[0,1]²`) and `E` is the emission
+where `(within_U, within_V)` is the local UV inside the cell (the
+cell's UV unwrap is stretched to fill `[0,1]²`) and `E` is the emission
 strength.
 
 Because of that material, each cell's light-group AOV at a wall pixel
 encodes:
 
-- `cell_K.b   = intensity_K` — the bounce light cell K
-  contributes at that pixel.
-- `cell_K.rg  = intensity_K × (within_U, within_V)` — the same intensity,
-  weighted by the local UV.
+- `cell_K.b   = intensity_K` — the bounce light cell K contributes
+  at that pixel.
+- `cell_K.rg  = intensity_K × (within_U, within_V)` — the same
+  intensity, weighted by the local UV.
 
 Decompose the global screen-plane U coordinate as
-`U_global = (col_K + within_U) / N`, integrate against the wall pixel's
-geometric weighting g(s):
+`U_global = (col_K + within_U) / N` and integrate against the wall
+pixel's geometric weighting:
 
 ```
 <U_global> = (Σ_K col_K · cell_K.b  +  Σ_K cell_K.r) / (N · Σ_K cell_K.b)
 ```
 
 (and likewise for V using `row_K` and `cell_K.g`). The denominator
-`Σ_K cell_K.b` is the reconstructed whitelight at the pixel — total
-bounce light from the screen, by construction.
+`Σ_K cell_K.b` is the reconstructed whitelight — the total bounce light
+from the screen at that pixel, by construction.
 
-The composite is then
+The Rust bake binary (`scripts/bake-textures/`) computes this once per
+pixel across all `N²` cells, applies a Gaussian blur of
+`POSITION_BLUR_SIGMA_PX`, and writes the result into `position.exr` as
+half-float. The blur smooths cell-boundary artifacts before quantization
+to 16-bit; tuning it trades reflection sharpness for stability.
 
-```
-final = beauty + scale · sample(userScreen, emitterUv) · whitelight
-```
-
-where `beauty` is the scene rendered with the screen emitter off and
-`scale = E` recovers the emission strength the build divided out for
-8-bit fitting (see "Pre-scale invariance" below).
-
-This is implemented in `src/composite/shader.ts` (fragment shader,
-`main()`).
-
-## Pre-scale invariance
-
-`E` typically exceeds 1.0. Cell EXR values up to `E` won't fit in an
-8-bit atlas, so the build divides every cell tile by `E` before
-quantization. The emitter UV is a ratio of cell-derived sums in both
-numerator and denominator, so the `1/E` factor cancels — the recovered
-UV is exact regardless of the pre-scale. The shader's `u_scale = E`
-(read from `atlasMeta.json`) multiplies the bounce contribution back to
-its scene-referred magnitude in the final composite line.
-
-## Atlas layout
-
-The atlas is a single PNG containing `1 + N²` logical tiles:
-
-```
-[ beauty, screen_0, screen_1, … , screen_{N²-1} ]
-```
-
-packed into a `tileCols × tileRows` row-major grid. `tileCols`,
-`tileRows`, and `cellsPerSide` (= `N`) are the single source of truth in
-`src/config.ts` and are interpolated as `const int` into the shader at
-module-evaluation time.
-
-Cells from `bmesh.ops.subdivide_edges(use_grid_fill=True)` do **not**
-come back in row-major order, so tile index `K` does not map to
-`(K % N, K / N)` in screen-plane coordinates. The Blender script writes
-`cells_manifest.json` mapping face index → `(col, row)`; the build
-forwards it as `cellGrid` in `atlasMeta.json`; the shader uploads it as
-`uniform ivec2 u_cellGrid[CELL_COUNT]` and uses
-`vec2(u_cellGrid[K]) · cell_K.b` in the weighted sum.
+`bmesh.ops.subdivide_edges(use_grid_fill=True)` does **not** emit faces
+in row-major order, so cell index `K` does not map to `(K % N, K / N)`
+in screen-plane coordinates. The Blender script writes
+`cells_manifest.json` mapping face index → `(col, row)`; the bake binary
+consumes it to weight `(col_K, row_K) · cell_K.b` correctly.
 
 ## Color management
 
 - Cell + beauty EXRs are linear/raw (Cycles default).
-- Build applies the sRGB OETF + BT.709 matrix via ffmpeg's `zscale`
-  filter before 8-bit quantization. sRGB encoding gives dark bounce
-  values much more bit budget than linear 8-bit (linear byte 1 ≈ 0.004
-  linear; sRGB byte 1 ≈ 0.0003 linear).
-- WebGL upload uses `UNPACK_COLORSPACE_CONVERSION_WEBGL = NONE` so the
-  browser does no transfer conversion. Browser behavior here is
-  inconsistent across implementations; pinning it to NONE makes the
-  shader's explicit `srgbToLinear` the only EOTF in play.
-- `UNPACK_FLIP_Y_WEBGL = true` so the PNG's top row lands at texture
-  v = 1; the shader's `tileUv` inverts the row direction so logical row
-  0 maps there.
+- The bake reads cells as linear floats, accumulates in linear, and
+  writes `position.exr` linearly — no transfer curve applied. The
+  shader samples it directly.
+- The bake applies the sRGB OETF to `beauty` before quantizing to 8-bit
+  PNG. The shader linearizes that PNG with explicit `srgbToLinear`
+  before compositing. WebGL upload uses
+  `UNPACK_COLORSPACE_CONVERSION_WEBGL = NONE` so the browser does no
+  transfer conversion — the shader's `srgbToLinear` is the only EOTF
+  in play.
+- `UNPACK_FLIP_Y_WEBGL = true`. The PNG path uploads via
+  HTMLImageElement and gets flipped (top of PNG → texture v = 1). The
+  EXR path uploads via ArrayBufferView (which is unaffected by
+  FLIP_Y), so the JS decoder pre-flips during scanline assembly to
+  achieve the same orientation.
 - All composite math runs in linear; `linearToSrgb` is applied to
-  `fragColor` before write (the canvas drawing buffer is treated as sRGB
-  by the browser).
+  `fragColor` before write.
 
 ## Asset pipeline
 
 1. **Blender** — `blender/generate_screen_cells.py` subdivides `SCREEN`
    into N² cell objects, gives each a Cycles light group, wires
    per-cell Denoise + File Output nodes, and writes
-   `cells_manifest.json`. Renders produce `beauty-####.exr` and
-   `cells/screen_K_####.exr` sequences.
-2. **Build** — `scripts/buildAssets.ts` flattens each multilayer cell
-   EXR's `screen_K.{R,G,B}` channels to root-level (ffmpeg's openexr
-   decoder doesn't read named layers), sums the flat cells via oiiotool
-   to detect `E = max-over-pixels of Σ_K cell_K`, divides each cell tile
-   by `E`, packs them with `beauty` into the atlas grid, applies the
-   sRGB OETF, and writes `public/composite/atlas.png` plus the
-   sidecar `atlasMeta.json` (`scale`, `encoding`, `cellGrid`).
-3. **Runtime** — `src/composite/Compositor.tsx` uploads the atlas PNG
-   once, fetches `atlasMeta.json` (sets `u_scale`, `u_cellGrid`),
-   re-uploads the user's 2D canvas as `u_screen` every animation frame,
-   draws a fullscreen quad. The fragment shader runs the math above per
-   pixel.
+   `cells_manifest.json`. The script reads `CELLS_PER_SIDE` from
+   `.env` (falling back to a hardcoded default if it can't locate the
+   repo root from Blender's text data block). Renders produce
+   `beauty-####.exr` and `cells/screen_K_####.exr` sequences.
+2. **Bake** — `scripts/bake-textures/` (Rust) reads the cell EXRs and
+   `cells_manifest.json`, computes per-pixel emitter UV and
+   whitelight, applies the Gaussian blur, and writes
+   `public/composite/{beauty.png, position.exr}`.
+3. **Runtime** — `src/composite/Compositor.tsx` uploads `beauty.png`
+   via an `<img>` element and fetches `position.exr` as an
+   `ArrayBuffer`, decoding it with `decodeExr.ts` into a
+   `Uint16Array` of half-float bits and uploading as `RGBA16F`. It
+   re-uploads the user's 2D canvas as `u_screen` every animation
+   frame and draws a fullscreen quad. The fragment shader runs the
+   two-texture composite above per pixel.
 
 ## Where in the code
 
-| Concern              | File                                          |
-| -------------------- | --------------------------------------------- |
-| Per-fragment math    | `src/composite/shader.ts`                     |
-| WebGL host           | `src/composite/Compositor.tsx`                |
-| Asset build          | `scripts/buildAssets.ts`                      |
-| Blender scene script | `blender/generate_screen_cells.py`            |
-| Shared constants     | `src/config.ts`                               |
-| Atlas + sidecar      | `public/composite/{atlas.png,atlasMeta.json}` |
+| Concern              | File                                         |
+| -------------------- | -------------------------------------------- |
+| Per-fragment math    | `src/composite/shader.ts`                    |
+| WebGL host           | `src/composite/Compositor.tsx`               |
+| EXR decoder          | `src/composite/decodeExr.ts`                 |
+| Asset bake           | `scripts/bake-textures/src/main.rs`          |
+| Blender scene script | `blender/generate_screen_cells.py`           |
+| Shared constants     | `src/config.ts`                              |
+| Baked outputs        | `public/composite/{beauty.png,position.exr}` |
