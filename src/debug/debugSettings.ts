@@ -45,6 +45,23 @@ export interface DebugSettings {
   screenSaturation: number;
   screenContrast: number;
   screenBrightness: number;
+  // Coffee-steam image-sequence overlay knobs. The overlay is mounted
+  // unconditionally; `coffeeSteamEnabled` only gates the contribution.
+  coffeeSteamEnabled: boolean;
+  // Multiplies steam bounce contribution before the additive composite.
+  coffeeSteamIntensity: number;
+  // Blur radius (in screen-texture pixels) applied to the screen
+  // content before it feeds the steam composite. Independent of the
+  // static compositor's screenBlurRadiusPx so the steam can run a
+  // softer / sharper reflection than the scene bounce.
+  coffeeSteamScreenBlurRadiusPx: number;
+  // Freeze playback at the last advanced frame index.
+  coffeeSteamFramePaused: boolean;
+  // Pin to a specific frame (overrides paused state). null = follow time.
+  coffeeSteamFrameOverride: number | null;
+  // Render the raw atlas into a corner overlay for debugging atlas
+  // decode / packing.
+  coffeeSteamShowAtlas: boolean;
 }
 
 export const defaultDebugSettings: DebugSettings = {
@@ -68,4 +85,10 @@ export const defaultDebugSettings: DebugSettings = {
   screenSaturation: 1,
   screenContrast: 1,
   screenBrightness: 1,
+  coffeeSteamEnabled: true,
+  coffeeSteamIntensity: 1,
+  coffeeSteamScreenBlurRadiusPx: 0,
+  coffeeSteamFramePaused: false,
+  coffeeSteamFrameOverride: null,
+  coffeeSteamShowAtlas: false,
 };

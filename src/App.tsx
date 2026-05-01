@@ -3,6 +3,7 @@ import "./composite/compositor.css";
 import { Compositor } from "./composite/Compositor";
 import { makeEmptyPerfMetrics } from "./composite/perfMetrics";
 import { ScreenOverlay } from "./composite/ScreenOverlay";
+import { SteamCompositor } from "./composite/SteamCompositor";
 import { DebugMenu } from "./debug/DebugMenu";
 import { defaultDebugSettings, type DebugSettings } from "./debug/debugSettings";
 
@@ -30,6 +31,15 @@ export function App() {
         settings={debugSettings}
         onSettingsChange={setDebugSettings}
         textureCanvasRef={screenSourceCanvasRef}
+      />
+      <SteamCompositor
+        screenSourceCanvasRef={screenSourceCanvasRef}
+        enabled={debugSettings.coffeeSteamEnabled}
+        intensity={debugSettings.coffeeSteamIntensity}
+        screenBlurRadiusPx={debugSettings.coffeeSteamScreenBlurRadiusPx}
+        framePaused={debugSettings.coffeeSteamFramePaused}
+        frameOverride={debugSettings.coffeeSteamFrameOverride}
+        showAtlas={debugSettings.coffeeSteamShowAtlas}
       />
       <DebugMenu
         settings={debugSettings}

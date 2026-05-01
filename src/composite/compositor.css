@@ -7,3 +7,21 @@
   display: block;
   background: #000;
 }
+
+.steam-compositor-canvas {
+  /* Sits above the screen overlay (z-index 10) so the steam visually
+     overlays the draggable windows; pointer-events: none lets clicks
+     fall through to the windows underneath. plus-lighter adds the
+     steam contribution on top of whatever the static composite + page
+     overlay show. */
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  display: block;
+  pointer-events: none;
+  z-index: 100;
+  mix-blend-mode: plus-lighter;
+  background: transparent;
+}

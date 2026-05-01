@@ -288,6 +288,111 @@ export function DebugMenu({ settings, onChange, perfMetricsRef }: DebugMenuProps
       </section>
 
       <section className="debug-menu-section">
+        <label className="debug-menu-row">
+          <input
+            type="checkbox"
+            checked={settings.coffeeSteamEnabled}
+            onChange={(event) =>
+              onChange({ ...settings, coffeeSteamEnabled: event.target.checked })
+            }
+          />
+          <span>Coffee steam</span>
+        </label>
+        {settings.coffeeSteamEnabled && (
+          <>
+            <label className="debug-menu-row">
+              <span>Steam intensity ({settings.coffeeSteamIntensity.toFixed(2)})</span>
+              <input
+                className="debug-menu-control"
+                type="range"
+                min={0}
+                max={3}
+                step={0.01}
+                value={settings.coffeeSteamIntensity}
+                onChange={(event) =>
+                  onChange({
+                    ...settings,
+                    coffeeSteamIntensity: Number(event.target.value),
+                  })
+                }
+              />
+            </label>
+            <label className="debug-menu-row">
+              <span>Steam screen blur ({settings.coffeeSteamScreenBlurRadiusPx}px)</span>
+              <input
+                className="debug-menu-control"
+                type="range"
+                min={0}
+                max={512}
+                step={1}
+                value={settings.coffeeSteamScreenBlurRadiusPx}
+                onChange={(event) =>
+                  onChange({
+                    ...settings,
+                    coffeeSteamScreenBlurRadiusPx: Number(event.target.value),
+                  })
+                }
+              />
+            </label>
+            <label className="debug-menu-row">
+              <input
+                type="checkbox"
+                checked={settings.coffeeSteamFramePaused}
+                onChange={(event) =>
+                  onChange({ ...settings, coffeeSteamFramePaused: event.target.checked })
+                }
+              />
+              <span>Pause steam playback</span>
+            </label>
+            <label className="debug-menu-row">
+              <input
+                type="checkbox"
+                checked={settings.coffeeSteamFrameOverride !== null}
+                onChange={(event) =>
+                  onChange({
+                    ...settings,
+                    coffeeSteamFrameOverride: event.target.checked
+                      ? (settings.coffeeSteamFrameOverride ?? 0)
+                      : null,
+                  })
+                }
+              />
+              <span>Override frame</span>
+            </label>
+            {settings.coffeeSteamFrameOverride !== null && (
+              <label className="debug-menu-row">
+                <span>Frame ({settings.coffeeSteamFrameOverride})</span>
+                <input
+                  className="debug-menu-control"
+                  type="range"
+                  min={0}
+                  max={95}
+                  step={1}
+                  value={settings.coffeeSteamFrameOverride}
+                  onChange={(event) =>
+                    onChange({
+                      ...settings,
+                      coffeeSteamFrameOverride: Number(event.target.value),
+                    })
+                  }
+                />
+              </label>
+            )}
+            <label className="debug-menu-row">
+              <input
+                type="checkbox"
+                checked={settings.coffeeSteamShowAtlas}
+                onChange={(event) =>
+                  onChange({ ...settings, coffeeSteamShowAtlas: event.target.checked })
+                }
+              />
+              <span>Show atlas (debug)</span>
+            </label>
+          </>
+        )}
+      </section>
+
+      <section className="debug-menu-section">
         <div className="debug-menu-row">
           <span>Display FPS</span>
           <span>{formatFps(perf.displayFps)}</span>
