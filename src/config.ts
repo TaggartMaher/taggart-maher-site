@@ -41,7 +41,8 @@ export const screenRect = computeScreenRect(cameraPose, screenPlane, renderAspec
 // from public/composite/.
 export const beautyImagePath = "/composite/beauty.png";
 export const positionImagePath = "/composite/position.exr";
-export const steamAtlasPath = "/composite/steam_atlas.exr";
+export const steamAtlasPath = "/composite/steam_atlas.png";
+export const steamAtlasMetaPath = "/composite/steam_atlas_meta.json";
 export const steamCellsManifestPath = "/composite/steam_cells_manifest.json";
 
 // Number of pre-baked steam frames in the atlas. Matches the FRAME_END

@@ -1,13 +1,18 @@
 // GLSL sources for the steam-overlay composite. The fragment shader
 // expects:
 //
-//   u_steamAtlas — RGBA16F linear EXR atlas of N×M frames packed
-//                  row-major, top-left = frame 0. Each frame's RGB
-//                  encodes (emitter U, emitter V, whitelight). The
-//                  decoder pre-flips Y so the atlas's top scanline
-//                  lands at texture v = 1.
+//   u_steamAtlas — 8-bit RGB PNG atlas of N×M frames packed row-major,
+//                  top-left = frame 0. Each pixel encodes
+//                  (emitter U, emitter V, whitelight / whitelightScale)
+//                  with all three channels in [0, 1]. UNPACK_FLIP_Y on
+//                  the HTMLImageElement upload lands the source's top
+//                  scanline at texture v = 1.
 //   u_screen     — sRGB-encoded screen-content texture, same source as
 //                  the static compositor's u_screen.
+//   u_whitelightScale — the max whitelight value across the atlas at
+//                  bake time. The shader multiplies the sampled .b
+//                  back by this to recover the linear scene-referred
+//                  bounce magnitude.
 //
 // Per output pixel: convert v_uv into the strip's normalized UV; pick
 // the current frame's sub-rect of the atlas; recover (emitterUv,
@@ -41,6 +46,9 @@ uniform vec2 u_atlasGridSize;
 uniform int u_frameIndex;
 // Multiplier applied to the bounce contribution before output.
 uniform float u_intensity;
+// Bake-time max whitelight; recovers the linear value from the
+// PNG's [0, 1]-quantized .b channel.
+uniform float u_whitelightScale;
 // 1 → render the raw atlas in the top-right corner for debugging,
 // skip the steam composite. 0 → normal path.
 uniform int u_showAtlas;
@@ -99,7 +107,7 @@ void main() {
 
   vec3 position = texture(u_steamAtlas, atlasUv).rgb;
   vec2 emitterUv = position.rg;
-  float whitelight = position.b;
+  float whitelight = position.b * u_whitelightScale;
 
   if (whitelight <= 0.0) {
     fragColor = vec4(0.0);

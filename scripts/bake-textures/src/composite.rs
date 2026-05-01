@@ -241,6 +241,46 @@ pub struct PositionFields {
     pub whitelight: Vec<f32>,
 }
 
+// Linear-quantize position fields into an 8-bit RGB PNG. R = U, G = V,
+// B = whitelight / whitelight_scale, all clamped to [0, 1] then rounded
+// to [0, 255]. Use this for the steam atlas where the EXR file size is
+// the bottleneck and 1/256 UV precision is acceptable for a soft
+// volumetric refraction. Caller must record `whitelight_scale` so the
+// runtime can multiply it back in.
+pub fn write_position_png_8bit(
+    path: &Path,
+    width: usize,
+    height: usize,
+    u_channel: &[f32],
+    v_channel: &[f32],
+    whitelight: &[f32],
+    whitelight_scale: f32,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let inverse_scale = if whitelight_scale > 0.0 {
+        1.0 / whitelight_scale
+    } else {
+        1.0
+    };
+    let mut bytes = Vec::with_capacity(width * height * 3);
+    for pixel_index in 0..(width * height) {
+        let u = u_channel[pixel_index].clamp(0.0, 1.0);
+        let v = v_channel[pixel_index].clamp(0.0, 1.0);
+        let w = (whitelight[pixel_index] * inverse_scale).clamp(0.0, 1.0);
+        bytes.push((u * 255.0).round() as u8);
+        bytes.push((v * 255.0).round() as u8);
+        bytes.push((w * 255.0).round() as u8);
+    }
+    let file = fs::File::create(path)?;
+    let writer = std::io::BufWriter::new(file);
+    let mut encoder = png::Encoder::new(writer, width as u32, height as u32);
+    encoder.set_color(png::ColorType::Rgb);
+    encoder.set_depth(png::BitDepth::Eight);
+    encoder.set_compression(png::Compression::Best);
+    let mut png_writer = encoder.write_header()?;
+    png_writer.write_image_data(&bytes)?;
+    Ok(())
+}
+
 // Per-pixel position recovery for a single set of `cell_count` cell
 // EXRs. Reads each cell's `<prefix>_K.{R,G,B}` channels, integrates
 // against the manifest's (col_K, row_K), and divides by N · whitelight.

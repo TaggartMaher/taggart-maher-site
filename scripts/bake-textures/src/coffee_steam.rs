@@ -103,7 +103,8 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let composite_dir = composite::composite_output_dir()?;
-    let atlas_out = composite_dir.join("steam_atlas.exr");
+    let atlas_out = composite_dir.join("steam_atlas.png");
+    let atlas_meta_out = composite_dir.join("steam_atlas_meta.json");
     let manifest_out = composite_dir.join("steam_cells_manifest.json");
 
     // Prime atlas dims from frame 1's cell 0. All cells across all
@@ -195,20 +196,44 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
+    // Compute the max whitelight across the whole atlas so we can
+    // normalize the [0, max] linear range into the [0, 1] window the
+    // PNG encoder needs. Floor at 1e-6 to avoid divide-by-zero when
+    // every pixel is dark; the runtime multiplies the sampled .b back
+    // by this scale.
+    let max_whitelight = atlas_whitelight
+        .iter()
+        .fold(0.0_f32, |accumulator, value| accumulator.max(*value));
+    let whitelight_scale = max_whitelight.max(1e-6);
+
     eprintln!(
-        "[bake coffee-steam] writing {} ({}x{}, RGBA16F uncompressed)...",
+        "[bake coffee-steam] writing {} ({}x{}, RGB8 PNG; whitelightScale = {:.6})...",
         atlas_out.display(),
         atlas_width,
-        atlas_height
+        atlas_height,
+        whitelight_scale
     );
-    composite::write_position_exr(
+    composite::write_position_png_8bit(
         &atlas_out,
         atlas_width,
         atlas_height,
         &atlas_position_u,
         &atlas_position_v,
         &atlas_whitelight,
+        whitelight_scale,
     )?;
+
+    let meta_json = serde_json::json!({
+        "whitelightScale": whitelight_scale,
+        "atlasColumns": STEAM_ATLAS_COLUMNS,
+        "atlasRows": STEAM_ATLAS_ROWS,
+        "frameCount": STEAM_FRAME_COUNT,
+    });
+    fs::write(&atlas_meta_out, serde_json::to_string_pretty(&meta_json)?)?;
+    eprintln!(
+        "[bake coffee-steam] wrote atlas meta -> {}",
+        atlas_meta_out.display()
+    );
 
     eprintln!(
         "[bake coffee-steam] copying manifest to {}",

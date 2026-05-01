@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import {
   steamAtlasColumns,
+  steamAtlasMetaPath,
   steamAtlasPath,
   steamAtlasRows,
   steamCellsManifestPath,
@@ -8,7 +9,6 @@ import {
   steamFps,
   steamFrameCount,
 } from "../config";
-import { decodeExr } from "./decodeExr";
 import { downsampleFragmentShaderSource, upsampleFragmentShaderSource } from "./shader";
 import { steamFragmentShaderSource, steamVertexShaderSource } from "./steamShader";
 
@@ -42,12 +42,16 @@ interface SteamCompositorProps {
   // precedence over `framePaused`.
   frameOverride: number | null;
   // Render the raw atlas in a corner instead of compositing — useful
-  // for verifying the EXR decoded and packed correctly.
+  // for verifying the atlas decoded and packed correctly.
   showAtlas: boolean;
 }
 
 interface SteamManifest {
   cellsPerSide?: number;
+}
+
+interface SteamAtlasMeta {
+  whitelightScale?: number;
 }
 
 function compileShader(gl: WebGL2RenderingContext, type: number, source: string): WebGLShader {
@@ -148,6 +152,7 @@ export function SteamCompositor({
     const atlasGridSizeUniformLocation = gl.getUniformLocation(program, "u_atlasGridSize");
     const frameIndexUniformLocation = gl.getUniformLocation(program, "u_frameIndex");
     const intensityUniformLocation = gl.getUniformLocation(program, "u_intensity");
+    const whitelightScaleUniformLocation = gl.getUniformLocation(program, "u_whitelightScale");
     const showAtlasUniformLocation = gl.getUniformLocation(program, "u_showAtlas");
     const downsampleSourceUniformLocation = gl.getUniformLocation(downsampleProgram, "u_source");
     const downsampleHalfPixelUniformLocation = gl.getUniformLocation(
@@ -262,40 +267,53 @@ export function SteamCompositor({
     let cancelled = false;
     let animationFrameHandle: number | null = null;
     let atlasTextureReady = false;
+    let atlasMetaReady = false;
+    let whitelightScale = 1.0;
     let renderingStarted = false;
     let manifestSeen = false;
     const renderStartTimestamp = performance.now();
-
-    fetch(steamAtlasPath)
-      .then((response) => {
-        if (!response.ok) {
-          throw new Error(`steam_atlas.exr fetch returned ${response.status}`);
-        }
-        return response.arrayBuffer();
-      })
-      .then((buffer) => {
+    const atlasImage = new Image();
+    atlasImage.crossOrigin = "anonymous";
+    atlasImage.addEventListener(
+      "load",
+      () => {
         if (cancelled) return;
-        const decoded = decodeExr(buffer);
-        gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
         gl.activeTexture(gl.TEXTURE0 + STEAM_ATLAS_UNIT);
         gl.bindTexture(gl.TEXTURE_2D, atlasTexture);
-        gl.texImage2D(
-          gl.TEXTURE_2D,
-          0,
-          gl.RGBA16F,
-          decoded.width,
-          decoded.height,
-          0,
-          gl.RGBA,
-          gl.HALF_FLOAT,
-          decoded.rgbaHalfFloats,
-        );
-        gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, atlasImage);
         atlasTextureReady = true;
+        maybeStartRendering();
+      },
+      { once: true },
+    );
+    atlasImage.addEventListener(
+      "error",
+      () => {
+        console.warn("[steam] failed to load steam_atlas.png");
+      },
+      { once: true },
+    );
+    atlasImage.src = steamAtlasPath;
+
+    fetch(steamAtlasMetaPath)
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error(`steam_atlas_meta.json fetch returned ${response.status}`);
+        }
+        return response.json() as Promise<SteamAtlasMeta>;
+      })
+      .then((meta) => {
+        if (cancelled) return;
+        if (typeof meta.whitelightScale === "number" && Number.isFinite(meta.whitelightScale)) {
+          whitelightScale = meta.whitelightScale;
+        } else {
+          console.warn("[steam] steam_atlas_meta.json missing whitelightScale — defaulting to 1.0");
+        }
+        atlasMetaReady = true;
         maybeStartRendering();
       })
       .catch((error) => {
-        console.warn("[steam] failed to load steam_atlas.exr:", error);
+        console.warn("[steam] failed to load steam_atlas_meta.json:", error);
       });
 
     fetch(steamCellsManifestPath)
@@ -448,6 +466,7 @@ export function SteamCompositor({
       gl.uniform2f(atlasGridSizeUniformLocation, steamAtlasColumns, steamAtlasRows);
       gl.uniform1i(frameIndexUniformLocation, currentFrameIndex(performance.now()));
       gl.uniform1f(intensityUniformLocation, intensityRef.current);
+      gl.uniform1f(whitelightScaleUniformLocation, whitelightScale);
       gl.uniform1i(showAtlasUniformLocation, showAtlasRef.current ? 1 : 0);
       gl.drawArrays(gl.TRIANGLES, 0, 6);
       gl.bindVertexArray(null);
@@ -463,7 +482,7 @@ export function SteamCompositor({
 
     function maybeStartRendering(): void {
       if (renderingStarted) return;
-      if (!atlasTextureReady) return;
+      if (!atlasTextureReady || !atlasMetaReady) return;
       renderingStarted = true;
       scheduleNextFrame();
     }
