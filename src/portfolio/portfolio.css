@@ -1236,9 +1236,15 @@
 }
 .portfolio .post-link {
   display: block;
+  width: 100%;
   padding: 18px 8px;
   text-decoration: none;
   color: var(--fg);
+  background: transparent;
+  border: 0;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
   transition: 0.1s;
 }
 .portfolio .post-link:hover {
