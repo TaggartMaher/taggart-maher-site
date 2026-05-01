@@ -1,184 +1,136 @@
-# Blender Emission Isolation Pipeline (for Live Web Compositing)
+# Composite theory
 
-## Goal
+The trick: a 3D scene rendered in Blender Cycles has a "screen" object
+whose content is alive at runtime. The user can paint anything onto it
+in a 2D canvas — a draggable square, an HTML render, an image — and the
+scene's bounce light responds positionally, as if the screen had really
+emitted that content. No re-rendering. A single fragment shader recovers
+the emitter UV per pixel from a handful of pre-rendered Cycles
+light-group AOVs and composites the result.
 
-Render an animation in Blender so that the light contribution of a single emission object (a "screen") can be re-textured live in a WebGL compositor. The user can swap the screen's content (e.g. drag a colored shape, render HTML to canvas) and the bounce light in the scene responds positionally as if the screen had really emitted that content.
+## The math
 
-## Approach: Three-Pass Render with UV-Gradient Position Encoding
+The screen plane is subdivided into an `N × N` grid of cells. Each cell
+is a separate object with its own Cycles light group; the shared
+material emits
 
-The technique relies on rendering three image sequences from the same animation (same camera, same frame range, same lights), changing only the screen object's material between passes. The "position pass" encodes screen UV coordinates as RGB so that, in a shader, the user's image can be looked up at the correct emitter position per scene point.
-
-## Render Pass 1 — Beauty Without Screen
-
-Captures the scene as if the screen were off.
-
-1. Select the screen plane → Material → set Emission **Strength = 0**.
-2. Object Properties → **Visibility → Ray Visibility** → uncheck **Camera**. (Don't use Holdout — that leaves a transparent hole; we want the wall behind to render normally.)
-3. Render the animation → save as `beauty_####.exr` (or PNG sequence).
-
-Result: scene with all other lighting intact, no screen contribution, no black rectangle where the screen was.
-
-## Render Pass 2 — White Light Pass
-
-Captures only the screen's light contribution, with the screen emitting pure white.
-
-1. Restore screen visibility (re-enable Camera ray visibility).
-2. Screen material → Emission **Strength = production value** (e.g. 5–20, whatever was originally intended).
-3. Emission **Color = pure white (1, 1, 1)**.
-4. Disable all other lights (set strength to 0). World background → black.
-5. Render → save as `whitelight_####.exr`.
-
-Result: scene lit only by the screen as a uniform white emitter. Records "how much screen-light reached each point."
-
-## Render Pass 3 — Position Pass (UV Gradient Emission)
-
-Same as Pass 2 except the screen emits a UV gradient instead of white.
-
-1. Keep all settings from Pass 2 (other lights off, world black, same emission strength).
-2. Screen material → replace the Emission Color input:
-   - Add a **Texture Coordinate** node.
-   - Take its **UV** output → plug into Emission → Color. **Direct connection only** — no ColorRamp, no Mapping, no Math, no Mix. Anything between Texture Coordinate.UV and Emission.Color corrupts the UV-as-color encoding.
-   - Do **not** use `Generated` as a substitute. It's a 3D coord (X, Y, Z) of the local bounding box; on a plane with non-degenerate Z extent the Z value leaks into the B channel as blue/purple/pink, breaking the math.
-3. Render → save as `position_####.exr`.
-
-Result: screen emits red on the U axis, green on the V axis. Surfaces lit by the screen are tinted by the average UV of the contributing screen regions.
-
-### UV map requirements (position pass)
-
-The screen plane's UV unwrap is the contract that ties Blender's emitter UVs to the canvas content the WebGL compositor samples. It must satisfy:
-
-- **Spans the full `[0, 1]²`** — every part of the canvas should be reachable on the plane. An island that only covers `[0, 0.43]` in U (e.g.) compresses canvas content into a sub-region of the screen.
-- **U axis horizontal, V axis vertical** relative to how the screen appears in the rendered camera view. If U/V are swapped or rotated 90°, the canvas displays rotated.
-- **Standard V-up orientation** — `UV (0, 0)` at the bottom-left vertex of the visible plane face, `UV (1, 1)` at the top-right. The compositor compensates for HTML canvas being top-down via `UNPACK_FLIP_Y_WEBGL=true`; with V-up on the plane and that flip on the canvas, no V flip is needed in the shader.
-
-**Verifying the unwrap (one-frame diagnostic).** Render a single frame of the position pass after re-unwrapping. Inspect the screen-rect crop:
-
-| Plane corner       | Expected color |
-| ------------------ | -------------- |
-| Bottom-left (0,0)  | black          |
-| Bottom-right (1,0) | red            |
-| Top-left (0,1)     | green          |
-| Top-right (1,1)    | yellow         |
-
-If two adjacent corners look the same, U or V is collapsed. If the colors are at the right corners but rotated, rotate the UV island 90° in the UV editor (`R 90` with the island selected).
-
-## Critical Color Management
-
-Passes 2 and 3 MUST be saved in linear/raw color space. The position pass values are coordinates, not colors — gamma correction will corrupt them.
-
-- File Format: **OpenEXR** with **ZIP** codec (HTJ2K is unsupported by current Fedora `oiiotool` / `ffmpeg` / OpenEXR ≤ 3.3).
-- Output → Color Management → **View Transform: Standard** (or **Raw** if available), **Look: None**.
-- For OpenEXR, color space should be **Linear / Non-Color**.
-
-The build pipeline (`scripts/buildAssets.ts`, agent side) handles all subsequent encoding into the H.264 atlas: pre-scaling by emission strength, sRGB OETF (for dark-value precision), atlas mosaic, ffmpeg encode. The shader undoes the OETF explicitly. The Blender side never needs to think about gamma or 8-bit clipping — keep EXR linear and let the build do the rest.
-
-## Compositor Math (WebGL Shader)
-
-The principle: `final = beauty + screenColor * whitelight`, where `screenColor` is the user's content sampled at the position-encoded emitter UV. As-shipped (`src/composite/shader.ts`), with all three passes packed into one atlas and pre-scaled by `E` at build time:
-
-```glsl
-vec3 beauty     = texture(u_atlas, beautyUv).rgb;
-vec3 whitelight = texture(u_atlas, whitelightUv).rgb;
-vec3 position   = texture(u_atlas, positionUv).rgb;
-
-vec2 emitterUv = position.rg / max(whitelight.r, 1e-3);
-vec3 screenColor = texture(u_screen, emitterUv).rgb;
-
-vec3 finalColor = beauty + u_scale * screenColor * whitelight;
+```
+(within_U, within_V, 1) × E
 ```
 
-The `position / whitelight` division is the core trick — it converts position-weighted illumination into the average source UV. Both numerator and denominator are pre-scaled by `1/E`, so the ratio is invariant. `u_scale = E` (read from `atlasMeta.json`) recovers the bounce magnitude divided out at build time.
+where `(within_U, within_V)` is the local UV inside the cell (the cell's
+UV unwrap is stretched to fill `[0,1]²`) and `E` is the emission
+strength.
 
-## Screen Surface Mapping (Bonus)
+Because of that material, each cell's light-group AOV at a wall pixel
+encodes:
 
-The position pass also gives you correct perspective mapping of the user's image onto the screen surface itself, for free: where the position pass shows non-zero values on the screen plane, those RGB values _are_ the screen's UVs by construction. Sampling `userScreenContent` at `positionRGB.rg` for those pixels paints the user image onto the screen in correct perspective. This means a 4th pass (alpha mask of the screen) is optional, not required.
+- `cell_K.b   = intensity_K` — the bounce light cell K
+  contributes at that pixel.
+- `cell_K.rg  = intensity_K × (within_U, within_V)` — the same intensity,
+  weighted by the local UV.
 
-## Verification Step
+Decompose the global screen-plane U coordinate as
+`U_global = (col_K + within_U) / N`, integrate against the wall pixel's
+geometric weighting g(s):
 
-Before building the web app, verify the math inside Blender's compositor on a single frame:
-
-1. Render the three passes for one frame.
-2. Render a 4th "ground truth" frame with a real image texture on the screen (instead of white or gradient).
-3. In Blender's compositor, compute `beauty + screenColor * whitelight` where `screenColor = sample(image, position / whitelight)`.
-4. Compare to the ground truth render. If they match, passes are correct.
-5. If they don't match, the cause is almost always color space — re-check that passes 2 and 3 are linear/raw.
-
-## Output Frame Count
-
-Currently configured at 96 frames @ 24fps (≈4-second loop). Frame count and fps are project-configurable from `src/config.ts` (single source of truth) — the runtime reads these to drive UV math, atlas indexing, and playback timing.
-
-The three passes are packed into one wide atlas video (3× width) so a single `<video>` element keeps all passes frame-locked.
-
-**Delivery format — resolved.** Single H.264 atlas at `crf 18`, with build-side pre-scaling and sRGB OETF (undone explicitly in the shader). See `INIT.md` "Assets" section for the full pipeline. Shipped, working — chroma subsampling artifacts on the position pass have not been a problem in practice. Image-sequence delivery (KTX2 etc.) is the fallback if quality demands it later, but the move would be reactive rather than speculative.
-
-## Build pipeline lessons (linear → web)
-
-Discovered iteratively while shipping. Read this before changing anything in `scripts/buildAssets.ts`:
-
-1. **EXR HTJ2K compression breaks the toolchain.** `ffmpeg`, `oiiotool`, and ImageMagick on Fedora 43 link against OpenEXR ≤ 3.3 which does not implement compression code 11. Render with **ZIP**.
-2. **Emission strength `E` exceeds 1.0** in linear EXR for both whitelight (the screen surface emits at `E`) and position (`UV * E`, with UV up to 1). 8-bit PNG quantization clips at 1.0, so a naive `oiiotool -d uint8` saturates most of the screen surface to a single corner sample. The build pipeline detects `E` from `whitelight-0001.exr`'s max channel value and divides whitelight + position by `E` before quantization. Beauty is untouched (its values are well under 1).
-3. **The `position / whitelight` ratio is invariant under uniform pre-scaling.** Dividing both passes by the same `E` preserves the emitter UV exactly while keeping values in `[0, 1]`.
-4. **The shader recovers magnitude with `u_scale = E`.** Stored bounce contribution is `screenColor * (whitelight/E)`, so `u_scale * screenColor * stored_whitelight = screenColor * whitelight` — the original scene-referred bounce.
-5. **Apply sRGB OETF in the build; undo it explicitly in the shader.** Two earlier iterations got this wrong. First, the build encoded sRGB and trusted the browser's `<video>` → `texImage2D` path to apply the inverse — it doesn't, reliably, so `position.rg` came through ~30% high in midtones and crushed the test image into the bottom-left of the screen plane. Second, we swung the other way and went fully linear in the build, hoping to skip transfer functions altogether — but 8-bit linear quantization is wasteful in dark values (anything below ~0.005 linear rounds to byte 0), so the wall bounce died in a hard circle around the screen instead of falling off softly across the room. The working approach is the explicit one: build does `zscale=tin=linear:t=iec61966-2-1:m=709` and tags the file `color_trc=iec61966-2-1`, the shader calls `srgbToLinear` on every atlas read so math runs in linear, and `linearToSrgb` is applied to `fragColor` at the end since the canvas drawing buffer is treated as sRGB by the browser. The screen-content PNG goes through the same `srgbToLinear` because PNGs are sRGB by definition.
-6. **`UNPACK_COLORSPACE_CONVERSION_WEBGL = NONE`**, deliberately. With BROWSER*DEFAULT the browser may or may not apply transfer-function conversion on upload (Chrome, Firefox, and Safari disagree). NONE pins the behavior so the shader's explicit `srgbToLinear` is the only EOTF in play. UNPACK_FLIP_Y_WEBGL stays `true` — that one \_is* reliable across browsers and the math depends on it.
-7. **Cache invalidation includes `encoding`.** Bumping the encoding string in `buildAssets.ts` (e.g. when the transfer strategy changes) forces a rebuild. Mtime alone won't catch a pipeline-version change.
-
-## How to verify a build round-trip
-
-```bash
-# What we wrote into the encoder:
-oiiotool --stats .cache/encode/atlas-0001.png
-
-# What comes back out of atlas.mp4:
-ffmpeg -i public/composite/atlas.mp4 -frames:v 1 /tmp/decoded.png
-oiiotool --stats /tmp/decoded.png
+```
+<U_global> = (Σ_K col_K · cell_K.b  +  Σ_K cell_K.r) / (N · Σ_K cell_K.b)
 ```
 
-`Stats Avg` should match within a few units of 255 — H.264 quantization noise. If they diverge by ≫ 1%, the encoder is doing something it shouldn't (gamma application, color matrix mismatch); investigate before chasing shader bugs.
+(and likewise for V using `row_K` and `cell_K.g`). The denominator
+`Σ_K cell_K.b` is the reconstructed whitelight at the pixel — total
+bounce light from the screen, by construction.
 
-## Alternative: Region-Split Light Groups (Fallback)
+The composite is then
 
-If the position-pass technique produces artifacts (e.g. due to render noise in dim areas where the division blows up), fall back to rendering N separate white-light passes with the screen split into N regions using Cycles Light Groups. 4 regions (2×2 grid) is the minimum for genuine positional response; 9 regions (3×3) is indistinguishable from ground truth. Compositor sums `region_i_pass * avgColorOfImageInRegion_i` across all regions. Higher render cost (Nx) but more robust to noise.
+```
+final = beauty + scale · sample(userScreen, emitterUv) · whitelight
+```
 
-## Visibility Flag Reference
+where `beauty` is the scene rendered with the screen emitter off and
+`scale = E` recovers the emission strength the build divided out for
+8-bit fitting (see "Pre-scale invariance" below).
 
-| Setting                                              | Effect                                                                                             |
-| ---------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
-| **Holdout** (Object Properties → Visibility)         | Renders transparent alpha hole; object still affects light transport (blocks light, casts shadow). |
-| **Ray Visibility → Camera** (Cycles only)            | Camera rays pass through; light still interacts normally. **Use this for Pass 1.**                 |
-| **Ray Visibility → Diffuse / Glossy / Transmission** | Controls bounce participation per ray type.                                                        |
-| **Ray Visibility → Shadow**                          | Controls shadow casting.                                                                           |
+This is implemented in `src/composite/shader.ts` (fragment shader,
+`main()`).
 
-## Project Naming Convention (.blend file)
+## Pre-scale invariance
 
-The pipeline is implemented via View Layers + Collections (no script). The names below are the source of truth — keep the .blend, this doc, and any tooling in sync.
+`E` typically exceeds 1.0. Cell EXR values up to `E` won't fit in an
+8-bit atlas, so the build divides every cell tile by `E` before
+quantization. The emitter UV is a ratio of cell-derived sums in both
+numerator and denominator, so the `1/E` factor cancels — the recovered
+UV is exact regardless of the pre-scale. The shader's `u_scale = E`
+(read from `atlasMeta.json`) multiplies the bounce contribution back to
+its scene-referred magnitude in the final composite line.
 
-**Collections**
+## Atlas layout
 
-| Collection      | Contents                                                    |
-| --------------- | ----------------------------------------------------------- |
-| `Scene`         | Camera, walls, props — anything identical across passes.    |
-| `StaticLights`  | All non-screen lights (and any black-world stand-in).       |
-| `SceneBeauty`   | `SCREEN` — the parent / source-of-truth screen object.      |
-| `SceneWhite`    | `SCREEN_WHITE` — linked duplicate, white emission.          |
-| `ScenePosition` | `SCREEN_POSITION` — linked duplicate, UV-gradient emission. |
+The atlas is a single PNG containing `1 + N²` logical tiles:
 
-`SCREEN_WHITE` and `SCREEN_POSITION` are Alt-D linked duplicates of `SCREEN` (shared mesh data) and parented to `SCREEN` so transforms propagate. Edit `SCREEN` only.
+```
+[ beauty, screen_0, screen_1, … , screen_{N²-1} ]
+```
 
-**View Layers**
+packed into a `tileCols × tileRows` row-major grid. `tileCols`,
+`tileRows`, and `cellsPerSide` (= `N`) are the single source of truth in
+`src/config.ts` and are interpolated as `const int` into the shader at
+module-evaluation time.
 
-| Layer        | Included collections                   |
-| ------------ | -------------------------------------- |
-| `Beauty`     | `Scene`, `StaticLights`, `SceneBeauty` |
-| `WhiteLight` | `Scene`, `SceneWhite`                  |
-| `Position`   | `Scene`, `ScenePosition`               |
+Cells from `bmesh.ops.subdivide_edges(use_grid_fill=True)` do **not**
+come back in row-major order, so tile index `K` does not map to
+`(K % N, K / N)` in screen-plane coordinates. The Blender script writes
+`cells_manifest.json` mapping face index → `(col, row)`; the build
+forwards it as `cellGrid` in `atlasMeta.json`; the shader uploads it as
+`uniform ivec2 u_cellGrid[CELL_COUNT]` and uses
+`vec2(u_cellGrid[K]) · cell_K.b` in the weighted sum.
 
-Exclusion is done via the Outliner's **Exclude from View Layer** checkbox (per-view-layer), not the eye visibility icon.
+## Color management
 
-**Material slot gotcha.** Because the three screen objects share mesh data (Alt-D), material slots live on the mesh and are shared across all three. To give each object its own material, set the slot's link dropdown to **Object** (not Data), keep only one slot per object, and assign the per-pass material to that slot. If multiple slots remain, slot 0 wins on every face, so all three planes render whichever material is in slot 0.
+- Cell + beauty EXRs are linear/raw (Cycles default).
+- Build applies the sRGB OETF + BT.709 matrix via ffmpeg's `zscale`
+  filter before 8-bit quantization. sRGB encoding gives dark bounce
+  values much more bit budget than linear 8-bit (linear byte 1 ≈ 0.004
+  linear; sRGB byte 1 ≈ 0.0003 linear).
+- WebGL upload uses `UNPACK_COLORSPACE_CONVERSION_WEBGL = NONE` so the
+  browser does no transfer conversion. Browser behavior here is
+  inconsistent across implementations; pinning it to NONE makes the
+  shader's explicit `srgbToLinear` the only EOTF in play.
+- `UNPACK_FLIP_Y_WEBGL = true` so the PNG's top row lands at texture
+  v = 1; the shader's `tileUv` inverts the row direction so logical row
+  0 maps there.
+- All composite math runs in linear; `linearToSrgb` is applied to
+  `fragColor` before write (the canvas drawing buffer is treated as sRGB
+  by the browser).
 
-## Cellular image mode (in-progress)
+## Asset pipeline
 
-Prototype path on the `lossless-image` debug branch. The screen plane is subdivided into N×N cells (`cellsPerSide` in `src/config.ts`, currently 3 → 9 cells) and each cell renders as its own Cycles light-group AOV via `blender/generate_screen_cells.py`. The build pipeline packs the still atlas as `[ beauty | whitelight | screen_0 | … | screen_{N²-1} ]` — `(2 + N²)` tiles instead of three. Per output pixel, the shader computes `length(rgb.rg)` for each cell tile (optionally box-averaged in screen space by `u_lookupBlurRadius` to suppress cell-boundary flicker), takes the argmax over cells, and looks up the user's screen content at that cell's centroid UV. The emitter position is therefore one of N² discrete points — a deliberate quantization trade: positional jumps survive lossless storage cleanly where the continuous `position / whitelight` ratio fights chroma artifacts.
+1. **Blender** — `blender/generate_screen_cells.py` subdivides `SCREEN`
+   into N² cell objects, gives each a Cycles light group, wires
+   per-cell Denoise + File Output nodes, and writes
+   `cells_manifest.json`. Renders produce `beauty-####.exr` and
+   `cells/screen_K_####.exr` sequences.
+2. **Build** — `scripts/buildAssets.ts` flattens each multilayer cell
+   EXR's `screen_K.{R,G,B}` channels to root-level (ffmpeg's openexr
+   decoder doesn't read named layers), sums the flat cells via oiiotool
+   to detect `E = max-over-pixels of Σ_K cell_K`, divides each cell tile
+   by `E`, packs them with `beauty` into the atlas grid, applies the
+   sRGB OETF, and writes `public/composite/atlas.png` plus the
+   sidecar `atlasMeta.json` (`scale`, `encoding`, `cellGrid`).
+3. **Runtime** — `src/composite/Compositor.tsx` uploads the atlas PNG
+   once, fetches `atlasMeta.json` (sets `u_scale`, `u_cellGrid`),
+   re-uploads the user's 2D canvas as `u_screen` every animation frame,
+   draws a fullscreen quad. The fragment shader runs the math above per
+   pixel.
 
-This path is gated by the "Cellular image" debug toggle (default on). When unchecked, the runtime falls back to the H.264 video atlas, which remains 3-pass (`beauty | whitelight | position`) and is unchanged by this work. Sub-cell precision is the next iteration — within-cell U/V is already encoded in each cell's R/G via UV-stretch-to-fit, the prototype just doesn't decode it yet.
+## Where in the code
+
+| Concern              | File                                          |
+| -------------------- | --------------------------------------------- |
+| Per-fragment math    | `src/composite/shader.ts`                     |
+| WebGL host           | `src/composite/Compositor.tsx`                |
+| Asset build          | `scripts/buildAssets.ts`                      |
+| Blender scene script | `blender/generate_screen_cells.py`            |
+| Shared constants     | `src/config.ts`                               |
+| Atlas + sidecar      | `public/composite/{atlas.png,atlasMeta.json}` |
