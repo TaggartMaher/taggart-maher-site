@@ -7,5 +7,5 @@ if [ -f .env ]; then
   source .env
   set +a
 fi
-pnpm exec tsx scripts/buildAssets.ts
+cargo run --quiet --release --manifest-path scripts/bake-textures/Cargo.toml
 exec pnpm dev "$@"
