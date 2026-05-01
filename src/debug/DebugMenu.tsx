@@ -90,20 +90,6 @@ export function DebugMenu({ settings, onChange, perfMetricsRef }: DebugMenuProps
           />
         </label>
         <label className="debug-menu-row">
-          <span>Lookup blur (radius {settings.lookupBlurRadius})</span>
-          <input
-            className="debug-menu-control"
-            type="range"
-            min={0}
-            max={5}
-            step={1}
-            value={settings.lookupBlurRadius}
-            onChange={(event) =>
-              onChange({ ...settings, lookupBlurRadius: Number(event.target.value) })
-            }
-          />
-        </label>
-        <label className="debug-menu-row">
           <span>U stretch ({settings.uStretch.toFixed(2)})</span>
           <input
             className="debug-menu-control"

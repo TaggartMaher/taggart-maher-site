@@ -16,7 +16,6 @@ export function App() {
       <Compositor
         screenSourceCanvasRef={screenSourceCanvasRef}
         screenBlurRadiusPx={debugSettings.screenBlurRadiusPx}
-        lookupBlurRadius={debugSettings.lookupBlurRadius}
         uStretch={debugSettings.uStretch}
         vStretch={debugSettings.vStretch}
         uOffset={debugSettings.uOffset}

@@ -1,33 +1,19 @@
-import { cellsPerSide, tileCols, tileRows } from "../config";
-
-// GLSL sources for the composite. The fragment shader expects a
-// cellular still atlas of (1 + N²) logical tiles
-// `[ beauty, screen_0, screen_1, … , screen_{N²-1} ]`
-// packed into a TILE_COLS × TILE_ROWS grid. Each `screen_K` tile is the
-// Cycles light-group AOV for cell K of the screen plane subdivided into
-// an N × N grid (see blender/generate_screen_cells.py). N is hard-coded
-// as `const int N` in the fragment shader — bumping it requires a
-// code change on both the Blender and shader sides.
+// GLSL sources for the composite. The fragment shader expects two
+// pre-baked textures from scripts/bake-textures/:
 //
-// Per output pixel: each cell's material emits `(within_U, within_V, 1) ×
-// intensity`, so cell_K.b records that cell's intensity contribution at
-// the wall pixel and cell_K.rg records `intensity × (within_U, within_V)`.
-// Decomposing the global screen-plane U coordinate as
-// `U_global = (col_K + within_U) / N` and integrating against the wall
-// pixel's geometric weighting g(s) gives:
+//   u_beauty   — sRGB PNG, the scene rendered with the screen emitter
+//                off; the additive base of the composite.
+//   u_position — RGBA16F linear EXR, R = emitter U, G = emitter V,
+//                B = scene-referred whitelight, A = 1. The cell-loop
+//                math the shader used to do per fragment is baked into
+//                this single sample at build time.
 //
-//   <U_global> = (Σ_K col_K * cell_K.b + Σ_K cell_K.r) / (N * Σ_K cell_K.b)
+// Per output pixel the composite is
 //
-// (and likewise for V using `row_K` and `cell_K.g`). The denominator
-// Σ_K cell_K.b is the reconstructed whitelight at the pixel — total
-// bounce light from the screen. The shader then samples the user's
-// screen-content texture at that emitter UV and composites:
+//     final = beauty + sample(userScreen, emitterUv) * whitelight
 //
-//   final = beauty + scale * sample(userScreen, emitterUv) * whitelight
-//
-// `scale` (uniform) recovers the magnitude that the build pipeline
-// divided out of the cell tiles to keep them inside the 8-bit atlas
-// range — see scripts/buildAssets.ts.
+// `whitelight` is the linear scene-referred bounce magnitude, so no
+// runtime scale uniform is needed. See COMPOSITE_THEORY.md.
 
 export const vertexShaderSource = `#version 300 es
 layout(location = 0) in vec2 a_position;
@@ -99,14 +85,14 @@ precision highp float;
 in vec2 v_uv;
 out vec4 fragColor;
 
-// Sampled from either the raw screen-content texture or the output of the
-// dual-Kawase blur chain (see downsample/upsampleFragmentShaderSource).
-// Either way, it holds sRGB-encoded screen pixels in the same orientation
-// as the upload.
-
-uniform sampler2D u_atlas;
+// sRGB-encoded scene render, top of image at v = 1 via UNPACK_FLIP_Y.
+uniform sampler2D u_beauty;
+// RGBA16F linear EXR — R=emitterU, G=emitterV, B=whitelight, A=1.
+// The decoder pre-flips Y so this samples with v_uv directly.
+uniform sampler2D u_position;
+// Sampled from either the raw screen-content texture or the output of
+// the dual-Kawase blur chain; sRGB-encoded screen pixels.
 uniform sampler2D u_screen;
-uniform float u_scale;
 // Per-axis linear stretch around (0.5, 0.5) applied to the emitter UV
 // before sampling the screen texture. (1.0, 1.0) = no change.
 // > 1 pushes that axis's edges outward.
@@ -122,27 +108,13 @@ uniform float u_edgeCutoff;
 uniform float u_screenSaturation;
 uniform float u_screenContrast;
 uniform float u_screenBrightness;
-// Box-average radius (in atlas texels) for the per-cell accumulation.
-// 0 = single sample at the pixel; > 0 smooths cell-boundary flicker.
-uniform int u_lookupBlurRadius;
 
-// Cells per side of the screen-plane subdivision. Tile count is
-// (beauty + N²), packed row-major into a tileCols × tileRows grid.
-// Logical tile K maps to (col = K % TILE_COLS, row = K / TILE_COLS).
-const int N = ${cellsPerSide};
-const int CELL_COUNT = N * N;
-const int TILE_COLS = ${tileCols};
-const int TILE_ROWS = ${tileRows};
-
-// Per-cell screen-plane (col, row), uploaded from atlasMeta.json.
-uniform ivec2 u_cellGrid[CELL_COUNT];
-
-// Explicit sRGB <-> linear round-trip. The atlas is sRGB-OETF-encoded by
-// the build, and the screen-content PNG is sRGB-encoded by definition.
-// We upload both with UNPACK_COLORSPACE_CONVERSION_WEBGL=NONE so the
-// browser adds nothing on top, then linearize manually here. Composite
-// math is done in linear, then re-encoded with the sRGB OETF before
-// writing to fragColor.
+// Explicit sRGB <-> linear round-trip. The beauty PNG is
+// sRGB-OETF-encoded by the bake; the screen-content canvas is
+// sRGB-encoded by definition. Both upload with
+// UNPACK_COLORSPACE_CONVERSION_WEBGL=NONE so the browser adds nothing
+// on top, then linearize manually here. Composite math runs in linear,
+// then re-encodes with the sRGB OETF before writing to fragColor.
 vec3 srgbToLinear(vec3 c) {
   vec3 cutoff = vec3(0.04045);
   vec3 hi = pow((c + 0.055) / 1.055, vec3(2.4));
@@ -157,59 +129,11 @@ vec3 linearToSrgb(vec3 c) {
   return mix(hi, lo, vec3(lessThan(c, cutoff)));
 }
 
-vec2 tileUv(int tileIndex, vec2 uv) {
-  // The atlas is packed row-major from the PNG top; UNPACK_FLIP_Y_WEBGL
-  // puts the PNG top at texture v = 1, so we invert the row direction
-  // here so v_uv.y near 1 lands inside the row-0 tile.
-  int col = tileIndex - (tileIndex / TILE_COLS) * TILE_COLS;
-  int rowFromTop = tileIndex / TILE_COLS;
-  int row = (TILE_ROWS - 1) - rowFromTop;
-  return vec2(
-    (uv.x + float(col)) / float(TILE_COLS),
-    (uv.y + float(row)) / float(TILE_ROWS)
-  );
-}
-
 void main() {
-  vec3 beauty = srgbToLinear(texture(u_atlas, tileUv(0, v_uv)).rgb);
-  vec2 atlasTexelSize = 1.0 / vec2(textureSize(u_atlas, 0));
-
-  // Reconstruct whitelight at the pixel center as Σ_K cell_K.b. By
-  // construction (each cell emits (within_U, within_V, 1) × intensity),
-  // cell_K.b records intensity_K and Σ_K intensity_K is the total
-  // bounce light reaching this pixel.
-  float whitelight = 0.0;
-  for (int K = 0; K < CELL_COUNT; K++) {
-    whitelight += srgbToLinear(texture(u_atlas, tileUv(1 + K, v_uv)).rgb).b;
-  }
-
-  // Continuous global emitter UV. With cell_K.b = intensity_K and
-  // cell_K.rg = intensity_K * (within_U, within_V), and decomposing
-  // U_global = (col_K + within_U) / N:
-  //
-  //   <U_global> = (Σ_K col_K * cell_K.b + Σ_K cell_K.r) / (N * Σ_K cell_K.b)
-  //
-  // Box-averaged in screen space by u_lookupBlurRadius. The averaged
-  // whitelightSum (= Σ_K cell_K.b summed over the box) is the matching
-  // divisor.
-  vec2 weightedGridSum = vec2(0.0);
-  vec2 totalCellRg = vec2(0.0);
-  float whitelightSum = 0.0;
-  int radius = u_lookupBlurRadius;
-  for (int dy = -5; dy <= 5; dy++) {
-    if (dy < -radius || dy > radius) continue;
-    for (int dx = -5; dx <= 5; dx++) {
-      if (dx < -radius || dx > radius) continue;
-      vec2 offset = vec2(float(dx), float(dy)) * atlasTexelSize;
-      for (int K = 0; K < CELL_COUNT; K++) {
-        vec3 cellSample = srgbToLinear(texture(u_atlas, tileUv(1 + K, v_uv) + offset).rgb);
-        whitelightSum += cellSample.b;
-        weightedGridSum += vec2(u_cellGrid[K]) * cellSample.b;
-        totalCellRg += cellSample.rg;
-      }
-    }
-  }
-  vec2 emitterUv = (weightedGridSum + totalCellRg) / max(whitelightSum * float(N), 1.0e-3);
+  vec3 beauty = srgbToLinear(texture(u_beauty, v_uv).rgb);
+  vec3 position = texture(u_position, v_uv).rgb;
+  vec2 emitterUv = position.rg;
+  float whitelight = position.b;
 
   emitterUv = (emitterUv - 0.5) * u_uvStretch + 0.5 + u_uvOffset;
   vec2 inWindow = step(vec2(u_edgeCutoff), emitterUv) *
@@ -227,7 +151,7 @@ void main() {
   screenColor *= u_screenBrightness;
   screenColor = max(screenColor, vec3(0.0));
 
-  vec3 finalColor = beauty + u_scale * screenColor * whitelight;
+  vec3 finalColor = beauty + screenColor * whitelight;
 
   // Reinhard tonemap: x / (1 + x). Compresses values > 1 with a soft
   // knee so the bright bounce rolls off into the displayable range

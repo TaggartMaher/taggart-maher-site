@@ -25,9 +25,6 @@ export interface DebugSettings {
   // Blur radius (in screen-texture pixels) applied to the screen
   // content before it feeds the composite. 0 disables.
   screenBlurRadiusPx: number;
-  // Box-average radius (in atlas texels) for the per-cell shader
-  // accumulation. 0 disables. Integer; clamped to [0, 5] in the shader.
-  lookupBlurRadius: number;
   // Per-axis linear stretch applied to emitterUv around (0.5, 0.5):
   //   u_out = (u - 0.5) * uStretch + 0.5
   //   v_out = (v - 0.5) * vStretch + 0.5
@@ -63,7 +60,6 @@ export const defaultDebugSettings: DebugSettings = {
   squareNormalizedX: 0.4,
   squareNormalizedY: 0.4,
   screenBlurRadiusPx: 0,
-  lookupBlurRadius: 1,
   uStretch: 1,
   vStretch: 1,
   uOffset: 0,
