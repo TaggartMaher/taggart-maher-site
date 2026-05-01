@@ -44,8 +44,13 @@ uniform vec4 u_strip;
 uniform vec2 u_atlasGridSize;
 // Current animation frame in [0, cols * rows).
 uniform int u_frameIndex;
-// Multiplier applied to the bounce contribution before output.
+// Multiplier applied to the bounce contribution before the soft clamp.
 uniform float u_intensity;
+// Per-channel soft ceiling. Generalized Reinhard x / (1 + x/W):
+// at x = W output is W/2, x -> infinity output -> W. Lowering this
+// caps bright steam without dimming low-magnitude details (small x
+// is approximately identity).
+uniform float u_maxIntensity;
 // Bake-time max whitelight; recovers the linear value from the
 // PNG's [0, 1]-quantized .b channel.
 uniform float u_whitelightScale;
@@ -117,11 +122,12 @@ void main() {
   vec3 screenColor = srgbToLinear(texture(u_screen, emitterUv).rgb);
   vec3 contribution = screenColor * whitelight * u_intensity;
 
-  // Reinhard tonemap the steam contribution before sRGB-encoding so
-  // values > 1 roll off softly — plus-lighter clamps to 1.0 in display
-  // space, otherwise bright bounces flatten the moment they exceed
-  // unity in any single channel.
-  contribution = contribution / (1.0 + contribution);
+  // Generalized Reinhard with W = u_maxIntensity. For x much smaller
+  // than W the output is approximately x (identity, so dim details
+  // survive); for x much greater than W the output asymptotes to W.
+  // plus-lighter then composes additively without flattening on
+  // overflow. W = 1 reproduces the classic x / (1 + x) soft-tonemap.
+  contribution = contribution / (1.0 + contribution / u_maxIntensity);
 
   fragColor = vec4(linearToSrgb(contribution), 1.0);
 }

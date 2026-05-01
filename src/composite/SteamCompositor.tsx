@@ -28,8 +28,13 @@ interface SteamCompositorProps {
   // composites stay visually consistent.
   screenSourceCanvasRef: React.RefObject<HTMLCanvasElement | null>;
   enabled: boolean;
-  // Multiplies the bounce contribution before additive composite.
+  // Multiplies the bounce contribution before the soft clamp.
   intensity: number;
+  // Soft ceiling on the bounce contribution per channel. Generalized
+  // Reinhard: small values pass through near-linearly, large values
+  // asymptote to this cap. Drop it to clamp bright peaks without
+  // attenuating subtle details.
+  maxIntensity: number;
   // Effective blur radius (in screen-texture pixels) applied to the
   // screen content before the steam shader samples it. 0 disables.
   // Independent of the static compositor's blur — a steamier coffee
@@ -89,6 +94,7 @@ export function SteamCompositor({
   screenSourceCanvasRef,
   enabled,
   intensity,
+  maxIntensity,
   screenBlurRadiusPx,
   framePaused,
   frameOverride,
@@ -102,6 +108,8 @@ export function SteamCompositor({
   enabledRef.current = enabled;
   const intensityRef = useRef(intensity);
   intensityRef.current = intensity;
+  const maxIntensityRef = useRef(maxIntensity);
+  maxIntensityRef.current = maxIntensity;
   const screenBlurRadiusPxRef = useRef(screenBlurRadiusPx);
   screenBlurRadiusPxRef.current = screenBlurRadiusPx;
   const framePausedRef = useRef(framePaused);
@@ -152,6 +160,7 @@ export function SteamCompositor({
     const atlasGridSizeUniformLocation = gl.getUniformLocation(program, "u_atlasGridSize");
     const frameIndexUniformLocation = gl.getUniformLocation(program, "u_frameIndex");
     const intensityUniformLocation = gl.getUniformLocation(program, "u_intensity");
+    const maxIntensityUniformLocation = gl.getUniformLocation(program, "u_maxIntensity");
     const whitelightScaleUniformLocation = gl.getUniformLocation(program, "u_whitelightScale");
     const showAtlasUniformLocation = gl.getUniformLocation(program, "u_showAtlas");
     const downsampleSourceUniformLocation = gl.getUniformLocation(downsampleProgram, "u_source");
@@ -466,6 +475,7 @@ export function SteamCompositor({
       gl.uniform2f(atlasGridSizeUniformLocation, steamAtlasColumns, steamAtlasRows);
       gl.uniform1i(frameIndexUniformLocation, currentFrameIndex(performance.now()));
       gl.uniform1f(intensityUniformLocation, intensityRef.current);
+      gl.uniform1f(maxIntensityUniformLocation, Math.max(1e-4, maxIntensityRef.current));
       gl.uniform1f(whitelightScaleUniformLocation, whitelightScale);
       gl.uniform1i(showAtlasUniformLocation, showAtlasRef.current ? 1 : 0);
       gl.drawArrays(gl.TRIANGLES, 0, 6);

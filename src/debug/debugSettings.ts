@@ -48,8 +48,14 @@ export interface DebugSettings {
   // Coffee-steam image-sequence overlay knobs. The overlay is mounted
   // unconditionally; `coffeeSteamEnabled` only gates the contribution.
   coffeeSteamEnabled: boolean;
-  // Multiplies steam bounce contribution before the additive composite.
+  // Multiplies steam bounce contribution before the soft clamp.
   coffeeSteamIntensity: number;
+  // Soft ceiling for the steam contribution (per channel, in linear
+  // light). Generalized Reinhard `x / (1 + x/W)`: values well below W
+  // pass through near-linearly; values approaching or exceeding W
+  // asymptote to W. Lower values clamp brighter peaks without
+  // dimming small details.
+  coffeeSteamMaxIntensity: number;
   // Blur radius (in screen-texture pixels) applied to the screen
   // content before it feeds the steam composite. Independent of the
   // static compositor's screenBlurRadiusPx so the steam can run a
@@ -87,6 +93,7 @@ export const defaultDebugSettings: DebugSettings = {
   screenBrightness: 1,
   coffeeSteamEnabled: true,
   coffeeSteamIntensity: 1,
+  coffeeSteamMaxIntensity: 1,
   coffeeSteamScreenBlurRadiusPx: 0,
   coffeeSteamFramePaused: false,
   coffeeSteamFrameOverride: null,

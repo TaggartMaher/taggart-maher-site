@@ -36,6 +36,7 @@ export function App() {
         screenSourceCanvasRef={screenSourceCanvasRef}
         enabled={debugSettings.coffeeSteamEnabled}
         intensity={debugSettings.coffeeSteamIntensity}
+        maxIntensity={debugSettings.coffeeSteamMaxIntensity}
         screenBlurRadiusPx={debugSettings.coffeeSteamScreenBlurRadiusPx}
         framePaused={debugSettings.coffeeSteamFramePaused}
         frameOverride={debugSettings.coffeeSteamFrameOverride}

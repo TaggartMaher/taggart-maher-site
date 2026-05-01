@@ -318,6 +318,23 @@ export function DebugMenu({ settings, onChange, perfMetricsRef }: DebugMenuProps
               />
             </label>
             <label className="debug-menu-row">
+              <span>Steam max ({settings.coffeeSteamMaxIntensity.toFixed(2)})</span>
+              <input
+                className="debug-menu-control"
+                type="range"
+                min={0.05}
+                max={1}
+                step={0.01}
+                value={settings.coffeeSteamMaxIntensity}
+                onChange={(event) =>
+                  onChange({
+                    ...settings,
+                    coffeeSteamMaxIntensity: Number(event.target.value),
+                  })
+                }
+              />
+            </label>
+            <label className="debug-menu-row">
               <span>Steam screen blur ({settings.coffeeSteamScreenBlurRadiusPx}px)</span>
               <input
                 className="debug-menu-control"
