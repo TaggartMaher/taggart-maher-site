@@ -12,12 +12,12 @@ import { computeScreenRect, type CameraPose, type ScreenPlane } from "./screenRe
 // on both sides, not just a config tweak.
 export const cellsPerSide = 9;
 
-// Atlas tile grid. The cellular still atlas packs (2 + cellsPerSide²)
-// logical tiles — beauty, whitelight, and one per cell — into a
-// row-major grid. Both the build script and the shader derive their
-// layout from these so changing cellsPerSide doesn't require a manual
-// grid update on either side.
-export const tileCount = 2 + cellsPerSide * cellsPerSide;
+// Atlas tile grid. The cellular still atlas packs (1 + cellsPerSide²)
+// logical tiles — beauty, plus one per cell — into a row-major grid.
+// Both the build script and the shader derive their layout from these
+// so changing cellsPerSide doesn't require a manual grid update on
+// either side.
+export const tileCount = 1 + cellsPerSide * cellsPerSide;
 export const tileCols = Math.ceil(Math.sqrt(tileCount));
 export const tileRows = Math.ceil(tileCount / tileCols);
 
