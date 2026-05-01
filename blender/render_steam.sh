@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Render only the CoffeeSteam view layer for frames 1..96.
-# Crops to the middle 25% horizontal slice (full vertical) so Cycles
-# only samples that region — meaningful render-time reduction.
+# Render only the CoffeeSteam view layer for frames 1..96. Crops to the
+# strip defined by STEAM_CROP_{MIN,MAX}_{X,Y} in .env so Cycles only
+# samples that region — meaningful render-time reduction.
 # Usage: ./render_steam.sh <blend-file>
 set -euo pipefail
 
@@ -14,12 +14,25 @@ BLEND_FILE="$1"
 FRAME_START=1
 FRAME_END=96
 VIEW_LAYER="CoffeeSteam"
-CROP_MIN_X=0.375
-CROP_MAX_X=0.625
-CROP_MIN_Y=0.0
-CROP_MAX_Y=1.0
 
-CROP_EXPR="r = bpy.context.scene.render; r.use_border = True; r.use_crop_to_border = True; r.border_min_x = ${CROP_MIN_X}; r.border_min_y = ${CROP_MIN_Y}; r.border_max_x = ${CROP_MAX_X}; r.border_max_y = ${CROP_MAX_Y}"
+# Locate the repo root from this script's path so the .env source works
+# regardless of where the user invokes the script from.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+
+if [ -f "${REPO_ROOT}/.env" ]; then
+    set -a
+    # shellcheck disable=SC1091
+    source "${REPO_ROOT}/.env"
+    set +a
+fi
+
+: "${STEAM_CROP_MIN_X:?STEAM_CROP_MIN_X must be set in .env}"
+: "${STEAM_CROP_MAX_X:?STEAM_CROP_MAX_X must be set in .env}"
+: "${STEAM_CROP_MIN_Y:?STEAM_CROP_MIN_Y must be set in .env}"
+: "${STEAM_CROP_MAX_Y:?STEAM_CROP_MAX_Y must be set in .env}"
+
+CROP_EXPR="r = bpy.context.scene.render; r.use_border = True; r.use_crop_to_border = True; r.border_min_x = ${STEAM_CROP_MIN_X}; r.border_min_y = ${STEAM_CROP_MIN_Y}; r.border_max_x = ${STEAM_CROP_MAX_X}; r.border_max_y = ${STEAM_CROP_MAX_Y}"
 
 blender "$BLEND_FILE" -b \
     --python-expr "import bpy; [setattr(vl, 'use', vl.name == '${VIEW_LAYER}') for vl in bpy.context.scene.view_layers]; ${CROP_EXPR}" \
