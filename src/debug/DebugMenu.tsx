@@ -335,6 +335,23 @@ export function DebugMenu({ settings, onChange, perfMetricsRef }: DebugMenuProps
               />
             </label>
             <label className="debug-menu-row">
+              <span>Steam opacity ({settings.coffeeSteamOpacity.toFixed(2)})</span>
+              <input
+                className="debug-menu-control"
+                type="range"
+                min={0}
+                max={1}
+                step={0.01}
+                value={settings.coffeeSteamOpacity}
+                onChange={(event) =>
+                  onChange({
+                    ...settings,
+                    coffeeSteamOpacity: Number(event.target.value),
+                  })
+                }
+              />
+            </label>
+            <label className="debug-menu-row">
               <span>Steam screen blur ({settings.coffeeSteamScreenBlurRadiusPx}px)</span>
               <input
                 className="debug-menu-control"

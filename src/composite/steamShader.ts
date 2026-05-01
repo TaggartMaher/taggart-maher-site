@@ -54,6 +54,10 @@ uniform float u_maxIntensity;
 // Bake-time max whitelight; recovers the linear value from the
 // PNG's [0, 1]-quantized .b channel.
 uniform float u_whitelightScale;
+// Source alpha for the steam canvas. Under CSS mix-blend-mode:
+// plus-lighter the per-pixel contribution to the backdrop is
+// alpha * source, so this is effectively the steam's opacity.
+uniform float u_opacity;
 // 1 → render the raw atlas in the top-right corner for debugging,
 // skip the steam composite. 0 → normal path.
 uniform int u_showAtlas;
@@ -129,6 +133,6 @@ void main() {
   // overflow. W = 1 reproduces the classic x / (1 + x) soft-tonemap.
   contribution = contribution / (1.0 + contribution / u_maxIntensity);
 
-  fragColor = vec4(linearToSrgb(contribution), 1.0);
+  fragColor = vec4(linearToSrgb(contribution), u_opacity);
 }
 `;

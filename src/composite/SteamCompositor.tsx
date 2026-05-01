@@ -35,6 +35,11 @@ interface SteamCompositorProps {
   // asymptote to this cap. Drop it to clamp bright peaks without
   // attenuating subtle details.
   maxIntensity: number;
+  // Output alpha. With CSS mix-blend-mode: plus-lighter the source's
+  // contribution to the backdrop is `alpha × source`, so this acts as
+  // an opacity multiplier — 1.0 reproduces the previous fully-additive
+  // behavior; lower values let more of the backdrop show through.
+  opacity: number;
   // Effective blur radius (in screen-texture pixels) applied to the
   // screen content before the steam shader samples it. 0 disables.
   // Independent of the static compositor's blur — a steamier coffee
@@ -95,6 +100,7 @@ export function SteamCompositor({
   enabled,
   intensity,
   maxIntensity,
+  opacity,
   screenBlurRadiusPx,
   framePaused,
   frameOverride,
@@ -110,6 +116,8 @@ export function SteamCompositor({
   intensityRef.current = intensity;
   const maxIntensityRef = useRef(maxIntensity);
   maxIntensityRef.current = maxIntensity;
+  const opacityRef = useRef(opacity);
+  opacityRef.current = opacity;
   const screenBlurRadiusPxRef = useRef(screenBlurRadiusPx);
   screenBlurRadiusPxRef.current = screenBlurRadiusPx;
   const framePausedRef = useRef(framePaused);
@@ -161,6 +169,7 @@ export function SteamCompositor({
     const frameIndexUniformLocation = gl.getUniformLocation(program, "u_frameIndex");
     const intensityUniformLocation = gl.getUniformLocation(program, "u_intensity");
     const maxIntensityUniformLocation = gl.getUniformLocation(program, "u_maxIntensity");
+    const opacityUniformLocation = gl.getUniformLocation(program, "u_opacity");
     const whitelightScaleUniformLocation = gl.getUniformLocation(program, "u_whitelightScale");
     const showAtlasUniformLocation = gl.getUniformLocation(program, "u_showAtlas");
     const downsampleSourceUniformLocation = gl.getUniformLocation(downsampleProgram, "u_source");
@@ -476,6 +485,7 @@ export function SteamCompositor({
       gl.uniform1i(frameIndexUniformLocation, currentFrameIndex(performance.now()));
       gl.uniform1f(intensityUniformLocation, intensityRef.current);
       gl.uniform1f(maxIntensityUniformLocation, Math.max(1e-4, maxIntensityRef.current));
+      gl.uniform1f(opacityUniformLocation, Math.max(0, Math.min(1, opacityRef.current)));
       gl.uniform1f(whitelightScaleUniformLocation, whitelightScale);
       gl.uniform1i(showAtlasUniformLocation, showAtlasRef.current ? 1 : 0);
       gl.drawArrays(gl.TRIANGLES, 0, 6);

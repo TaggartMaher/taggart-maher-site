@@ -37,6 +37,7 @@ export function App() {
         enabled={debugSettings.coffeeSteamEnabled}
         intensity={debugSettings.coffeeSteamIntensity}
         maxIntensity={debugSettings.coffeeSteamMaxIntensity}
+        opacity={debugSettings.coffeeSteamOpacity}
         screenBlurRadiusPx={debugSettings.coffeeSteamScreenBlurRadiusPx}
         framePaused={debugSettings.coffeeSteamFramePaused}
         frameOverride={debugSettings.coffeeSteamFrameOverride}
