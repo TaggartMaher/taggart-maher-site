@@ -90,23 +90,32 @@ function detectTileDimensions(samplePath: string): { width: number; height: numb
 }
 
 // E = max-over-pixels of Σ_K cell_K (B-channel of the sum is whitelight
-// by construction; max ≤ E for R and G).
-function detectAtlasScaleFromFlatCells(flatCellPaths: string[]): number {
+// by construction; max ≤ E for R and G). Two-step: write the sum to a
+// temp EXR, then stat that file the same way the old whitelight
+// detector did.
+function detectAtlasScaleFromFlatCells(flatCellPaths: string[], sumPath: string): number {
   if (flatCellPaths.length === 0) {
     throw new Error("[assets] cannot detect scale from empty cell list");
   }
-  const args: string[] = [flatCellPaths[0]];
+  const sumArgs: string[] = [flatCellPaths[0]];
   for (let cellIndex = 1; cellIndex < flatCellPaths.length; cellIndex += 1) {
-    args.push(flatCellPaths[cellIndex], "--add");
+    sumArgs.push(flatCellPaths[cellIndex], "--add");
   }
-  args.push("--stats");
-  const result = spawnSync("oiiotool", args, { encoding: "utf8" });
-  if (result.status !== 0) {
-    throw new Error(`[assets] oiiotool sum --stats failed:\n${result.stderr}`);
+  sumArgs.push("-o", sumPath);
+  const sumResult = spawnSync("oiiotool", sumArgs, { encoding: "utf8" });
+  if (sumResult.status !== 0) {
+    throw new Error(`[assets] oiiotool sum failed:\n${sumResult.stderr}`);
   }
-  const maxLine = result.stdout.match(/Stats Max:\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)/);
+  const statsResult = spawnSync("oiiotool", ["--stats", sumPath], { encoding: "utf8" });
+  if (statsResult.status !== 0) {
+    throw new Error(`[assets] oiiotool --stats on cell sum failed:\n${statsResult.stderr}`);
+  }
+  // Tokens cover plain decimals, scientific notation, and signed values.
+  const maxLine = statsResult.stdout.match(/Stats Max:\s+(\S+)\s+(\S+)\s+(\S+)/);
   if (!maxLine) {
-    throw new Error("[assets] could not parse cell-sum Stats Max output");
+    throw new Error(
+      `[assets] could not parse cell-sum Stats Max output. oiiotool stdout was:\n${statsResult.stdout}`,
+    );
   }
   const channelMax = Math.max(
     parseFloat(maxLine[1]),
@@ -234,7 +243,10 @@ if (stillNeedsEncode) {
     flattenedCellPaths.push(flatPath);
   }
 
-  atlasScale = detectAtlasScaleFromFlatCells(flattenedCellPaths);
+  atlasScale = detectAtlasScaleFromFlatCells(
+    flattenedCellPaths,
+    join(flattenedCellsDir, "_sum.exr"),
+  );
   const inverseScale = 1 / atlasScale;
   console.log(`[assets] scale = ${atlasScale.toFixed(6)}, encoding = ${atlasEncoding}`);
 
