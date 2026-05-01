@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { atlasImagePath, atlasPath, cellsPerSide } from "../config";
+import { atlasImagePath, cellsPerSide } from "../config";
 import type { PerfMetrics } from "./perfMetrics";
 import {
   downsampleFragmentShaderSource,
@@ -17,23 +17,11 @@ const MAX_BLUR_CHAIN_DEPTH = 6;
 
 interface CompositorProps {
   // Canvas providing the live screen-content image. The compositor
-  // re-uploads it as the `u_screen` texture every video frame, so any
+  // re-uploads it as the `u_screen` texture every frame, so any
   // 2D-canvas drawing the parent does is reflected in the bounce light
   // on the next frame. May start null and be assigned later — the
   // compositor waits for it before rendering.
   screenSourceCanvasRef: React.RefObject<HTMLCanvasElement | null>;
-  // When true, pause the atlas video on its first frame. Bounce
-  // (whitelight/position) is therefore static, but the screen-content
-  // texture and shader uniforms keep updating so dragging the debug
-  // square or swapping background still re-renders.
-  freezeFirstFrame: boolean;
-  // When true, the compositor pulls the atlas texture from the cellular
-  // still PNG (frame 1, `[ beauty | whitelight | screen_0 | … |
-  // screen_{N²-1} ]`) instead of the looping MP4. The bounce contribution
-  // is static and free of chroma-subsampling artifacts; emitter position
-  // is one of N² discrete centroids picked per pixel by argmax. The
-  // mount-only setup effect re-runs when this toggles to swap sources.
-  useCellularImage: boolean;
   // Effective blur radius (in screen-texture pixels) applied to the
   // screen-content image before it feeds the composite, via a dual-Kawase
   // downsample/upsample chain. 0 disables the blur passes and the
@@ -41,9 +29,8 @@ interface CompositorProps {
   // a chain depth and a final-pass kernel offset.
   screenBlurRadiusPx: number;
   // Box-average radius (in atlas texels) applied to the per-cell
-  // brightness reduction before argmax in the cellular shader. Smooths
-  // cell-boundary flicker; 0 disables the average. Integer; clamped to
-  // [0, 5] in the shader.
+  // accumulation in the cellular shader. Smooths cell-boundary flicker;
+  // 0 disables the average. Integer; clamped to [0, 5] in the shader.
   lookupBlurRadius: number;
   // Per-axis linear stretch around (0.5, 0.5) applied to the emitter UV
   // before sampling the screen content. 1.0 is the physical default;
@@ -100,8 +87,6 @@ function linkProgram(
 
 export function Compositor({
   screenSourceCanvasRef,
-  freezeFirstFrame,
-  useCellularImage,
   screenBlurRadiusPx,
   lookupBlurRadius,
   uStretch,
@@ -115,14 +100,7 @@ export function Compositor({
   perfMetricsRef,
 }: CompositorProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const videoRef = useRef<HTMLVideoElement | null>(null);
   const imageRef = useRef<HTMLImageElement | null>(null);
-  // Mirror prop into a ref so the handleVideoReady callback inside the
-  // mount-only setup effect can honor the latest freeze state without
-  // re-running the WebGL teardown/rebuild path.
-  const freezeFirstFrameRef = useRef(freezeFirstFrame);
-  // Mirror the blur radius into a ref for the same reason — the rAF render
-  // loop reads it each frame without forcing a context rebuild on change.
   const screenBlurRadiusPxRef = useRef(screenBlurRadiusPx);
   screenBlurRadiusPxRef.current = screenBlurRadiusPx;
   const lookupBlurRadiusRef = useRef(lookupBlurRadius);
@@ -144,33 +122,10 @@ export function Compositor({
   const screenBrightnessRef = useRef(screenBrightness);
   screenBrightnessRef.current = screenBrightness;
 
-  // React to the freeze toggle without tearing down the WebGL context:
-  // pause/seek the video element directly, and let the rAF render loop
-  // keep uploading the current (paused) frame plus any screen-texture
-  // updates from the parent.
-  useEffect(() => {
-    freezeFirstFrameRef.current = freezeFirstFrame;
-    const video = videoRef.current;
-    if (!video) return;
-    if (freezeFirstFrame) {
-      video.pause();
-      try {
-        video.currentTime = 0;
-      } catch {
-        /* seeking before metadata loads throws — handled on loadedmetadata */
-      }
-    } else {
-      void video.play().catch(() => {
-        /* autoplay can be blocked; user gesture will recover it */
-      });
-    }
-  }, [freezeFirstFrame]);
-
   useEffect(() => {
     const canvas = canvasRef.current;
-    const video = videoRef.current;
     const image = imageRef.current;
-    if (!canvas || !video || !image) return;
+    if (!canvas || !image) return;
 
     const gl = canvas.getContext("webgl2", { antialias: false, premultipliedAlpha: false });
     if (!gl) {
@@ -274,9 +229,6 @@ export function Compositor({
       if (!texture || !framebuffer) {
         throw new Error("[compositor] failed to create blur level resources");
       }
-      // Bind once for parameter setup so the level texture has linear
-      // filtering and clamp-to-edge wrapping; allocation happens lazily
-      // in ensureBlurChainSized.
       gl.activeTexture(gl.TEXTURE0 + BLUR_READ_UNIT);
       gl.bindTexture(gl.TEXTURE_2D, texture);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
@@ -322,25 +274,16 @@ export function Compositor({
         );
       }
       gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-      // Re-bind level 0 to the unit the composite reads from so the
-      // post-blur sampler picks up the right texture. The unit only needs
-      // to hold this binding while the composite draw call fires; later
-      // passes free to repurpose BLUR_READ_UNIT.
       gl.activeTexture(gl.TEXTURE0 + BLUR_OUTPUT_UNIT);
       gl.bindTexture(gl.TEXTURE_2D, blurLevels[0].texture);
     }
 
-    // Both video and 2D-canvas sources are top-left origin in the source
-    // image, but WebGL textures default to bottom-left. Flip on upload so
-    // the position-pass UVs and screen-content sampling agree.
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
 
     // Don't let the browser apply transfer-function conversions on upload.
     // The atlas is sRGB-OETF-encoded by the build and the screen-content
     // PNG is sRGB by definition; the shader does the EOTF explicitly via
-    // `srgbToLinear`. With BROWSER_DEFAULT, behavior varies across
-    // browsers — we'd see double-decoding or no decoding depending on the
-    // implementation. NONE makes the round-trip predictable.
+    // `srgbToLinear`. NONE makes the round-trip predictable across browsers.
     gl.pixelStorei(gl.UNPACK_COLORSPACE_CONVERSION_WEBGL, gl.NONE);
 
     let cancelled = false;
@@ -351,15 +294,6 @@ export function Compositor({
     // frame and writes a smoothed snapshot into perfMetricsRef so the
     // debug menu (or any other reader) can poll without coupling to the
     // render cadence.
-    //
-    // - displayFps: derived from rAF callback timestamps.
-    // - videoFps: derived from HTMLVideoElement.getVideoPlaybackQuality()
-    //   deltas — i.e., decoded video frames per wall-clock second. Goes
-    //   to 0 when the video is paused.
-    // - cpuFrameMs: time spent inside renderFrame on the JS thread.
-    // - gpuFrameMs: TIME_ELAPSED_EXT timer query encompassing all GL
-    //   work for the frame. Resolves asynchronously a few frames later;
-    //   reported as null when the extension isn't available.
     const timerQueryExtension = gl.getExtension("EXT_disjoint_timer_query_webgl2");
     const pendingTimerQueries: WebGLQuery[] = [];
     const exponentialAverageAlpha = 0.1;
@@ -367,9 +301,6 @@ export function Compositor({
     let gpuFrameMsAverage: number | null = timerQueryExtension ? 0 : null;
     const recentFrameTimestamps: number[] = [];
     const recentFrameTimestampsCapacity = 60;
-    let lastVideoQualitySampleTime = 0;
-    let lastVideoQualityFrameCount = 0;
-    let videoFpsAverage = 0;
 
     function publishPerfMetrics(): void {
       if (!perfMetricsRef?.current) return;
@@ -383,16 +314,12 @@ export function Compositor({
         }
       }
       perfMetricsRef.current.displayFps = displayFps;
-      perfMetricsRef.current.videoFps = videoFpsAverage;
       perfMetricsRef.current.cpuFrameMs = cpuFrameMsAverage;
       perfMetricsRef.current.gpuFrameMs = gpuFrameMsAverage;
     }
 
     function drainCompletedTimerQueries(): void {
       if (!gl || !timerQueryExtension) return;
-      // Per the extension spec, results from any TIME_ELAPSED query that
-      // straddled a GPU disjoint event are unreliable; throw the whole
-      // pending batch away when we see one rather than report nonsense.
       const disjoint = gl.getParameter(timerQueryExtension.GPU_DISJOINT_EXT);
       if (disjoint) {
         for (const query of pendingTimerQueries) gl.deleteQuery(query);
@@ -415,9 +342,9 @@ export function Compositor({
       }
     }
 
-    // The build pipeline pre-scales whitelight + position into [0,1] and
-    // writes the scale factor here. Until the metadata arrives we render
-    // with scale = 1 (visible scene, no bounce magnitude correction).
+    // The build pipeline pre-scales cell tiles into [0,1] and writes the
+    // scale factor here. Until the metadata arrives we render with
+    // scale = 1 (visible scene, no bounce magnitude correction).
     let atlasScale = 1;
 
     // Per-cell screen-plane (col, row), packed as a flat Int32Array for
@@ -470,37 +397,12 @@ export function Compositor({
     }
 
     function renderFrame(): void {
-      if (cancelled || !gl || !canvas || !video || !image) return;
+      if (cancelled || !gl || !canvas || !image) return;
 
       const cpuStartMs = performance.now();
       recentFrameTimestamps.push(cpuStartMs);
       if (recentFrameTimestamps.length > recentFrameTimestampsCapacity) {
         recentFrameTimestamps.shift();
-      }
-
-      // Sample video decode rate roughly twice a second. The browser
-      // exposes a monotonic decoded-frame counter; differencing it over
-      // wall-clock gives us the actual atlas FPS independent of the rAF
-      // cadence (which can run faster than the video).
-      const playbackQuality = video.getVideoPlaybackQuality?.();
-      if (playbackQuality) {
-        if (lastVideoQualitySampleTime === 0) {
-          lastVideoQualitySampleTime = cpuStartMs;
-          lastVideoQualityFrameCount = playbackQuality.totalVideoFrames;
-        } else {
-          const elapsedSeconds = (cpuStartMs - lastVideoQualitySampleTime) / 1000;
-          if (elapsedSeconds >= 0.5) {
-            const decodedFrameDelta = playbackQuality.totalVideoFrames - lastVideoQualityFrameCount;
-            const sampleFps = decodedFrameDelta / elapsedSeconds;
-            videoFpsAverage =
-              videoFpsAverage === 0
-                ? sampleFps
-                : videoFpsAverage * (1 - exponentialAverageAlpha) +
-                  sampleFps * exponentialAverageAlpha;
-            lastVideoQualitySampleTime = cpuStartMs;
-            lastVideoQualityFrameCount = playbackQuality.totalVideoFrames;
-          }
-        }
       }
 
       drainCompletedTimerQueries();
@@ -513,21 +415,14 @@ export function Compositor({
         }
       }
 
-      // Upload atlas frame. Cellular-image mode uploads the PNG exactly
-      // once (it's static — re-uploading a wide RGB image at rAF rate
-      // tanks fps); video mode uploads every frame because the browser
-      // has a fast zero-copy path from the decoder.
-      if (useCellularImage) {
-        if (!atlasImageUploaded && image.complete && image.naturalWidth > 0) {
-          gl.activeTexture(gl.TEXTURE0);
-          gl.bindTexture(gl.TEXTURE_2D, atlasTexture);
-          gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, image);
-          atlasImageUploaded = true;
-        }
-      } else if (video.readyState >= video.HAVE_CURRENT_DATA) {
+      // Atlas image is static; upload once when it first becomes ready.
+      // Re-uploading the wide RGB PNG every frame would tank fps for no
+      // gain — nothing about it changes between frames.
+      if (!atlasImageUploaded && image.complete && image.naturalWidth > 0) {
         gl.activeTexture(gl.TEXTURE0);
         gl.bindTexture(gl.TEXTURE_2D, atlasTexture);
-        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, video);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, image);
+        atlasImageUploaded = true;
       }
 
       // Upload the latest screen-content frame from the parent's canvas.
@@ -564,7 +459,6 @@ export function Compositor({
 
         gl.bindVertexArray(vertexArrayObject);
 
-        // Downsample chain: level 0 (screenTexture) → level 1 → … → level chainDepth.
         gl.useProgram(downsampleProgram);
         gl.uniform1i(downsampleSourceUniformLocation, BLUR_READ_UNIT);
         gl.uniform1f(downsampleOffsetUniformLocation, kernelOffset);
@@ -586,7 +480,6 @@ export function Compositor({
           gl.drawArrays(gl.TRIANGLES, 0, 6);
         }
 
-        // Upsample chain: level chainDepth → … → level 0.
         gl.useProgram(upsampleProgram);
         gl.uniform1i(upsampleSourceUniformLocation, BLUR_READ_UNIT);
         gl.uniform1f(upsampleOffsetUniformLocation, kernelOffset);
@@ -605,7 +498,6 @@ export function Compositor({
           gl.drawArrays(gl.TRIANGLES, 0, 6);
         }
 
-        // Make level 0 (the blurred result) available to the composite.
         gl.activeTexture(gl.TEXTURE0 + BLUR_OUTPUT_UNIT);
         gl.bindTexture(gl.TEXTURE_2D, blurLevels[0].texture);
 
@@ -648,56 +540,24 @@ export function Compositor({
 
     function scheduleNextFrame(): void {
       if (cancelled) return;
-      // Always use requestAnimationFrame: we need to keep rendering when
-      // the video is paused (freeze-first-frame mode) so screen-content
-      // texture edits — square drag, color picker, etc. — still hit the
-      // GPU. requestVideoFrameCallback would stop firing on pause and
-      // freeze the whole composite, including the bounce contribution
-      // from a moving square.
       animationFrameHandle = requestAnimationFrame(() => {
         renderFrame();
         scheduleNextFrame();
       });
     }
 
-    function handleVideoReady(): void {
-      if (freezeFirstFrameRef.current) {
-        video!.pause();
-        try {
-          video!.currentTime = 0;
-        } catch {
-          /* ignore */
-        }
-      } else {
-        video!.play().catch((error) => {
-          console.warn("[compositor] video autoplay rejected:", error);
-        });
-      }
-      scheduleNextFrame();
-    }
-
     function handleImageReady(): void {
-      // Image-mode: video stays paused; rAF drives screen-content uploads
-      // and shader-uniform updates so debug edits still recompose.
-      video!.pause();
       scheduleNextFrame();
     }
 
-    if (useCellularImage) {
-      if (image.complete && image.naturalWidth > 0) {
-        handleImageReady();
-      } else {
-        image.addEventListener("load", handleImageReady, { once: true });
-      }
-    } else if (video.readyState >= video.HAVE_CURRENT_DATA) {
-      handleVideoReady();
+    if (image.complete && image.naturalWidth > 0) {
+      handleImageReady();
     } else {
-      video.addEventListener("loadeddata", handleVideoReady, { once: true });
+      image.addEventListener("load", handleImageReady, { once: true });
     }
 
     return () => {
       cancelled = true;
-      video.removeEventListener("loadeddata", handleVideoReady);
       image.removeEventListener("load", handleImageReady);
       if (animationFrameHandle !== null) {
         cancelAnimationFrame(animationFrameHandle);
@@ -715,21 +575,11 @@ export function Compositor({
       gl.deleteProgram(upsampleProgram);
       for (const query of pendingTimerQueries) gl.deleteQuery(query);
     };
-  }, [screenSourceCanvasRef, perfMetricsRef, useCellularImage]);
+  }, [screenSourceCanvasRef, perfMetricsRef]);
 
   return (
     <>
       <canvas ref={canvasRef} className="compositor-canvas" />
-      <video
-        ref={videoRef}
-        src={atlasPath}
-        muted
-        loop
-        playsInline
-        preload="auto"
-        crossOrigin="anonymous"
-        style={{ display: "none" }}
-      />
       <img
         ref={imageRef}
         src={atlasImagePath}

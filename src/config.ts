@@ -1,11 +1,8 @@
 // Single source of truth shared between the human-owned Blender side and the
-// agent-owned web side. When the Blender scene changes (frame count, fps,
-// camera, screen plane), update the values here and the runtime adapts.
+// agent-owned web side. When the Blender scene changes (camera, screen
+// plane, cell grid), update the values here and the runtime adapts.
 
 import { computeScreenRect, type CameraPose, type ScreenPlane } from "./screenRect";
-
-export const frameCount = 96;
-export const fps = 24;
 
 // Side length of the screen-cell grid for cellular-image mode. The screen
 // plane is subdivided into N×N cells in Blender (see
@@ -51,17 +48,8 @@ export const screenPlane: ScreenPlane = {
 
 export const screenRect = computeScreenRect(cameraPose, screenPlane, renderAspect);
 
-// Composite atlas video — a single 3x-wide H.264 yuv420p MP4 file
-// containing all three passes side-by-side (beauty | whitelight |
-// position) at `renderAspect` per pass. Built by scripts/buildAssets.ts
-// and served from public/composite/ by Vite. The shader samples each
-// third of the frame as its own pass, so frame lock between passes is
-// automatic. 4:2:0 is the only chroma format that decodes via `<video>`
-// in Chrome, Firefox, and Safari — system decoders reject 4:4:4.
-export const atlasPath = "/composite/atlas.mp4";
-
-// Perceptually-lossless still version of the atlas: frame 1 of the same
-// hstack+sRGB pipeline, encoded as PNG (rgb24, no chroma subsampling). The
-// debug menu can route the compositor to this image instead of the MP4 to
-// eliminate H.264 / 4:2:0 artifacts when iterating on shader behavior.
+// Composite atlas — a single PNG containing the beauty tile and one tile
+// per screen-cell light-group AOV, packed into a tileCols × tileRows
+// grid. Built by scripts/buildAssets.ts and served from public/composite/
+// by Vite.
 export const atlasImagePath = "/composite/atlas.png";

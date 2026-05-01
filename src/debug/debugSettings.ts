@@ -11,20 +11,6 @@ export interface DebugSettings {
   // backgrounds and the draggable square still render if their own
   // checkboxes are enabled.
   hidePageOverlay: boolean;
-  // When true, pause the atlas video on its first frame so iteration
-  // doesn't have to wait through the loop. Bounce light + the
-  // draggable square / image background still update live; only the
-  // beauty/whitelight/position passes freeze.
-  freezeFirstFrame: boolean;
-  // When true, source the atlas from the cellular still PNG (frame 1)
-  // instead of the H.264 MP4. The still has `2 + N²` tiles
-  // `[ beauty | whitelight | screen_0 | … | screen_{N²-1} ]`; the shader
-  // picks the dominant cell per pixel and looks up the user screen at
-  // that cell's centroid. Bounce passes are static in this mode (single
-  // frame), but free of 4:2:0 chroma artifacts and discretized into
-  // N² emitter positions, which survives the lossless image path
-  // cleanly.
-  useCellularImage: boolean;
   imageBackgroundEnabled: boolean;
   imageBackgroundUrl: string;
   // When true, the image background still feeds the screen-content
@@ -85,8 +71,6 @@ export interface DebugSettings {
 
 export const defaultDebugSettings: DebugSettings = {
   hidePageOverlay: false,
-  freezeFirstFrame: false,
-  useCellularImage: true,
   imageBackgroundEnabled: false,
   imageBackgroundUrl: testImages[0].url,
   hideImageOverlay: false,
