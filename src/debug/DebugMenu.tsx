@@ -84,6 +84,14 @@ export function DebugMenu({ settings, onChange, perfMetricsRef }: DebugMenuProps
           <span>Freeze first frame</span>
         </label>
         <label className="debug-menu-row">
+          <input
+            type="checkbox"
+            checked={settings.useCellularImage}
+            onChange={(event) => onChange({ ...settings, useCellularImage: event.target.checked })}
+          />
+          <span>Cellular image</span>
+        </label>
+        <label className="debug-menu-row">
           <span>Screen blur ({settings.screenBlurRadiusPx}px)</span>
           <input
             className="debug-menu-control"
@@ -94,6 +102,20 @@ export function DebugMenu({ settings, onChange, perfMetricsRef }: DebugMenuProps
             value={settings.screenBlurRadiusPx}
             onChange={(event) =>
               onChange({ ...settings, screenBlurRadiusPx: Number(event.target.value) })
+            }
+          />
+        </label>
+        <label className="debug-menu-row">
+          <span>Lookup blur (radius {settings.lookupBlurRadius})</span>
+          <input
+            className="debug-menu-control"
+            type="range"
+            min={0}
+            max={5}
+            step={1}
+            value={settings.lookupBlurRadius}
+            onChange={(event) =>
+              onChange({ ...settings, lookupBlurRadius: Number(event.target.value) })
             }
           />
         </label>
@@ -213,17 +235,31 @@ export function DebugMenu({ settings, onChange, perfMetricsRef }: DebugMenuProps
           <span>Image background</span>
         </label>
         {settings.imageBackgroundEnabled && (
-          <select
-            className="debug-menu-control"
-            value={settings.imageBackgroundUrl}
-            onChange={(event) => onChange({ ...settings, imageBackgroundUrl: event.target.value })}
-          >
-            {testImages.map((image) => (
-              <option key={image.url} value={image.url}>
-                {image.label}
-              </option>
-            ))}
-          </select>
+          <>
+            <select
+              className="debug-menu-control"
+              value={settings.imageBackgroundUrl}
+              onChange={(event) =>
+                onChange({ ...settings, imageBackgroundUrl: event.target.value })
+              }
+            >
+              {testImages.map((image) => (
+                <option key={image.url} value={image.url}>
+                  {image.label}
+                </option>
+              ))}
+            </select>
+            <label className="debug-menu-row">
+              <input
+                type="checkbox"
+                checked={settings.hideImageOverlay}
+                onChange={(event) =>
+                  onChange({ ...settings, hideImageOverlay: event.target.checked })
+                }
+              />
+              <span>Hide image overlay</span>
+            </label>
+          </>
         )}
       </section>
 
@@ -260,12 +296,24 @@ export function DebugMenu({ settings, onChange, perfMetricsRef }: DebugMenuProps
           <span>Draggable square</span>
         </label>
         {settings.squareEnabled && (
-          <input
-            className="debug-menu-control"
-            type="color"
-            value={settings.squareColor}
-            onChange={(event) => onChange({ ...settings, squareColor: event.target.value })}
-          />
+          <>
+            <input
+              className="debug-menu-control"
+              type="color"
+              value={settings.squareColor}
+              onChange={(event) => onChange({ ...settings, squareColor: event.target.value })}
+            />
+            <label className="debug-menu-row">
+              <input
+                type="checkbox"
+                checked={settings.hideSquareOverlay}
+                onChange={(event) =>
+                  onChange({ ...settings, hideSquareOverlay: event.target.checked })
+                }
+              />
+              <span>Hide square overlay</span>
+            </label>
+          </>
         )}
       </section>
 

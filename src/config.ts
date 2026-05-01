@@ -7,6 +7,23 @@ import { computeScreenRect, type CameraPose, type ScreenPlane } from "./screenRe
 export const frameCount = 96;
 export const fps = 24;
 
+// Side length of the screen-cell grid for cellular-image mode. The screen
+// plane is subdivided into N×N cells in Blender (see
+// blender/generate_screen_cells.py) and each cell renders to its own EXR
+// AOV. The shader hard-codes the same N as `const int N` for argmax
+// over (2 + N²) atlas tiles — bumping this value requires a code change
+// on both sides, not just a config tweak.
+export const cellsPerSide = 9;
+
+// Atlas tile grid. The cellular still atlas packs (2 + cellsPerSide²)
+// logical tiles — beauty, whitelight, and one per cell — into a
+// row-major grid. Both the build script and the shader derive their
+// layout from these so changing cellsPerSide doesn't require a manual
+// grid update on either side.
+export const tileCount = 2 + cellsPerSide * cellsPerSide;
+export const tileCols = Math.ceil(Math.sqrt(tileCount));
+export const tileRows = Math.ceil(tileCount / tileCols);
+
 // Render output aspect (width / height). Update if the Blender output
 // resolution changes.
 export const renderAspect = 16 / 9;
@@ -42,3 +59,9 @@ export const screenRect = computeScreenRect(cameraPose, screenPlane, renderAspec
 // automatic. 4:2:0 is the only chroma format that decodes via `<video>`
 // in Chrome, Firefox, and Safari — system decoders reject 4:4:4.
 export const atlasPath = "/composite/atlas.mp4";
+
+// Perceptually-lossless still version of the atlas: frame 1 of the same
+// hstack+sRGB pipeline, encoded as PNG (rgb24, no chroma subsampling). The
+// debug menu can route the compositor to this image instead of the MP4 to
+// eliminate H.264 / 4:2:0 artifacts when iterating on shader behavior.
+export const atlasImagePath = "/composite/atlas.png";

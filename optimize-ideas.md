@@ -1,0 +1,3 @@
+- lower resolutions
+- pre-bake position data in some file per frame
+- use pre blur

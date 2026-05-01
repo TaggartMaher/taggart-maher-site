@@ -176,3 +176,9 @@ The pipeline is implemented via View Layers + Collections (no script). The names
 Exclusion is done via the Outliner's **Exclude from View Layer** checkbox (per-view-layer), not the eye visibility icon.
 
 **Material slot gotcha.** Because the three screen objects share mesh data (Alt-D), material slots live on the mesh and are shared across all three. To give each object its own material, set the slot's link dropdown to **Object** (not Data), keep only one slot per object, and assign the per-pass material to that slot. If multiple slots remain, slot 0 wins on every face, so all three planes render whichever material is in slot 0.
+
+## Cellular image mode (in-progress)
+
+Prototype path on the `lossless-image` debug branch. The screen plane is subdivided into N×N cells (`cellsPerSide` in `src/config.ts`, currently 3 → 9 cells) and each cell renders as its own Cycles light-group AOV via `blender/generate_screen_cells.py`. The build pipeline packs the still atlas as `[ beauty | whitelight | screen_0 | … | screen_{N²-1} ]` — `(2 + N²)` tiles instead of three. Per output pixel, the shader computes `length(rgb.rg)` for each cell tile (optionally box-averaged in screen space by `u_lookupBlurRadius` to suppress cell-boundary flicker), takes the argmax over cells, and looks up the user's screen content at that cell's centroid UV. The emitter position is therefore one of N² discrete points — a deliberate quantization trade: positional jumps survive lossless storage cleanly where the continuous `position / whitelight` ratio fights chroma artifacts.
+
+This path is gated by the "Cellular image" debug toggle (default on). When unchecked, the runtime falls back to the H.264 video atlas, which remains 3-pass (`beauty | whitelight | position`) and is unchanged by this work. Sub-cell precision is the next iteration — within-cell U/V is already encoded in each cell's R/G via UV-stretch-to-fit, the prototype just doesn't decode it yet.

@@ -16,7 +16,9 @@ export function App() {
       <Compositor
         screenSourceCanvasRef={screenSourceCanvasRef}
         freezeFirstFrame={debugSettings.freezeFirstFrame}
+        useCellularImage={debugSettings.useCellularImage}
         screenBlurRadiusPx={debugSettings.screenBlurRadiusPx}
+        lookupBlurRadius={debugSettings.lookupBlurRadius}
         uStretch={debugSettings.uStretch}
         vStretch={debugSettings.vStretch}
         uOffset={debugSettings.uOffset}

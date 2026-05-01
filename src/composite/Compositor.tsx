@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { atlasPath } from "../config";
+import { atlasImagePath, atlasPath, cellsPerSide } from "../config";
 import type { PerfMetrics } from "./perfMetrics";
 import {
   downsampleFragmentShaderSource,
@@ -27,12 +27,24 @@ interface CompositorProps {
   // texture and shader uniforms keep updating so dragging the debug
   // square or swapping background still re-renders.
   freezeFirstFrame: boolean;
+  // When true, the compositor pulls the atlas texture from the cellular
+  // still PNG (frame 1, `[ beauty | whitelight | screen_0 | … |
+  // screen_{N²-1} ]`) instead of the looping MP4. The bounce contribution
+  // is static and free of chroma-subsampling artifacts; emitter position
+  // is one of N² discrete centroids picked per pixel by argmax. The
+  // mount-only setup effect re-runs when this toggles to swap sources.
+  useCellularImage: boolean;
   // Effective blur radius (in screen-texture pixels) applied to the
   // screen-content image before it feeds the composite, via a dual-Kawase
   // downsample/upsample chain. 0 disables the blur passes and the
   // composite samples the raw screen texture. The host maps the radius to
   // a chain depth and a final-pass kernel offset.
   screenBlurRadiusPx: number;
+  // Box-average radius (in atlas texels) applied to the per-cell
+  // brightness reduction before argmax in the cellular shader. Smooths
+  // cell-boundary flicker; 0 disables the average. Integer; clamped to
+  // [0, 5] in the shader.
+  lookupBlurRadius: number;
   // Per-axis linear stretch around (0.5, 0.5) applied to the emitter UV
   // before sampling the screen content. 1.0 is the physical default;
   // > 1 pushes that axis's edges outward.
@@ -89,7 +101,9 @@ function linkProgram(
 export function Compositor({
   screenSourceCanvasRef,
   freezeFirstFrame,
+  useCellularImage,
   screenBlurRadiusPx,
+  lookupBlurRadius,
   uStretch,
   vStretch,
   uOffset,
@@ -102,6 +116,7 @@ export function Compositor({
 }: CompositorProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const imageRef = useRef<HTMLImageElement | null>(null);
   // Mirror prop into a ref so the handleVideoReady callback inside the
   // mount-only setup effect can honor the latest freeze state without
   // re-running the WebGL teardown/rebuild path.
@@ -110,6 +125,8 @@ export function Compositor({
   // loop reads it each frame without forcing a context rebuild on change.
   const screenBlurRadiusPxRef = useRef(screenBlurRadiusPx);
   screenBlurRadiusPxRef.current = screenBlurRadiusPx;
+  const lookupBlurRadiusRef = useRef(lookupBlurRadius);
+  lookupBlurRadiusRef.current = lookupBlurRadius;
   const uStretchRef = useRef(uStretch);
   uStretchRef.current = uStretch;
   const vStretchRef = useRef(vStretch);
@@ -152,7 +169,8 @@ export function Compositor({
   useEffect(() => {
     const canvas = canvasRef.current;
     const video = videoRef.current;
-    if (!canvas || !video) return;
+    const image = imageRef.current;
+    if (!canvas || !video || !image) return;
 
     const gl = canvas.getContext("webgl2", { antialias: false, premultipliedAlpha: false });
     if (!gl) {
@@ -192,6 +210,8 @@ export function Compositor({
     const screenSaturationUniformLocation = gl.getUniformLocation(program, "u_screenSaturation");
     const screenContrastUniformLocation = gl.getUniformLocation(program, "u_screenContrast");
     const screenBrightnessUniformLocation = gl.getUniformLocation(program, "u_screenBrightness");
+    const lookupBlurRadiusUniformLocation = gl.getUniformLocation(program, "u_lookupBlurRadius");
+    const cellGridUniformLocation = gl.getUniformLocation(program, "u_cellGrid[0]");
     const downsampleSourceUniformLocation = gl.getUniformLocation(downsampleProgram, "u_source");
     const downsampleHalfPixelUniformLocation = gl.getUniformLocation(
       downsampleProgram,
@@ -325,6 +345,7 @@ export function Compositor({
 
     let cancelled = false;
     let animationFrameHandle: number | null = null;
+    let atlasImageUploaded = false;
 
     // Perf instrumentation. The render loop updates these scalars each
     // frame and writes a smoothed snapshot into perfMetricsRef so the
@@ -398,14 +419,37 @@ export function Compositor({
     // writes the scale factor here. Until the metadata arrives we render
     // with scale = 1 (visible scene, no bounce magnitude correction).
     let atlasScale = 1;
+
+    // Per-cell screen-plane (col, row), packed as a flat Int32Array for
+    // glUniform2iv. Default is identity ordering — wrong for the real
+    // bmesh subdivide+grid_fill output, so the screen-content lookup is
+    // garbled until atlasMeta.json arrives and we overwrite it.
+    const cellCount = cellsPerSide * cellsPerSide;
+    const cellGridUniformData = new Int32Array(cellCount * 2);
+    for (let cellIndex = 0; cellIndex < cellCount; cellIndex += 1) {
+      cellGridUniformData[cellIndex * 2] = cellIndex % cellsPerSide;
+      cellGridUniformData[cellIndex * 2 + 1] = Math.floor(cellIndex / cellsPerSide);
+    }
+
     fetch("/composite/atlasMeta.json")
       .then((response) => (response.ok ? response.json() : null))
-      .then((meta: { scale?: number } | null) => {
+      .then((meta: { scale?: number; cellGrid?: Array<[number, number]> } | null) => {
         if (meta && typeof meta.scale === "number") {
           atlasScale = meta.scale;
         } else {
           console.warn(
             "[compositor] atlasMeta.json missing or invalid — bounce magnitude uncorrected",
+          );
+        }
+        if (meta && Array.isArray(meta.cellGrid) && meta.cellGrid.length === cellCount) {
+          for (let cellIndex = 0; cellIndex < cellCount; cellIndex += 1) {
+            const entry = meta.cellGrid[cellIndex];
+            cellGridUniformData[cellIndex * 2] = entry[0];
+            cellGridUniformData[cellIndex * 2 + 1] = entry[1];
+          }
+        } else {
+          console.warn(
+            "[compositor] atlasMeta.cellGrid missing or wrong length — screen-content lookup will use identity ordering",
           );
         }
       })
@@ -426,7 +470,7 @@ export function Compositor({
     }
 
     function renderFrame(): void {
-      if (cancelled || !gl || !canvas || !video) return;
+      if (cancelled || !gl || !canvas || !video || !image) return;
 
       const cpuStartMs = performance.now();
       recentFrameTimestamps.push(cpuStartMs);
@@ -469,8 +513,18 @@ export function Compositor({
         }
       }
 
-      // Upload atlas frame from the current video frame.
-      if (video.readyState >= video.HAVE_CURRENT_DATA) {
+      // Upload atlas frame. Cellular-image mode uploads the PNG exactly
+      // once (it's static — re-uploading a wide RGB image at rAF rate
+      // tanks fps); video mode uploads every frame because the browser
+      // has a fast zero-copy path from the decoder.
+      if (useCellularImage) {
+        if (!atlasImageUploaded && image.complete && image.naturalWidth > 0) {
+          gl.activeTexture(gl.TEXTURE0);
+          gl.bindTexture(gl.TEXTURE_2D, atlasTexture);
+          gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, image);
+          atlasImageUploaded = true;
+        }
+      } else if (video.readyState >= video.HAVE_CURRENT_DATA) {
         gl.activeTexture(gl.TEXTURE0);
         gl.bindTexture(gl.TEXTURE_2D, atlasTexture);
         gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, video);
@@ -572,6 +626,8 @@ export function Compositor({
       gl.uniform1f(screenSaturationUniformLocation, screenSaturationRef.current);
       gl.uniform1f(screenContrastUniformLocation, screenContrastRef.current);
       gl.uniform1f(screenBrightnessUniformLocation, screenBrightnessRef.current);
+      gl.uniform1i(lookupBlurRadiusUniformLocation, lookupBlurRadiusRef.current);
+      gl.uniform2iv(cellGridUniformLocation, cellGridUniformData);
       gl.drawArrays(gl.TRIANGLES, 0, 6);
       gl.bindVertexArray(null);
 
@@ -620,7 +676,20 @@ export function Compositor({
       scheduleNextFrame();
     }
 
-    if (video.readyState >= video.HAVE_CURRENT_DATA) {
+    function handleImageReady(): void {
+      // Image-mode: video stays paused; rAF drives screen-content uploads
+      // and shader-uniform updates so debug edits still recompose.
+      video!.pause();
+      scheduleNextFrame();
+    }
+
+    if (useCellularImage) {
+      if (image.complete && image.naturalWidth > 0) {
+        handleImageReady();
+      } else {
+        image.addEventListener("load", handleImageReady, { once: true });
+      }
+    } else if (video.readyState >= video.HAVE_CURRENT_DATA) {
       handleVideoReady();
     } else {
       video.addEventListener("loadeddata", handleVideoReady, { once: true });
@@ -629,6 +698,7 @@ export function Compositor({
     return () => {
       cancelled = true;
       video.removeEventListener("loadeddata", handleVideoReady);
+      image.removeEventListener("load", handleImageReady);
       if (animationFrameHandle !== null) {
         cancelAnimationFrame(animationFrameHandle);
       }
@@ -645,7 +715,7 @@ export function Compositor({
       gl.deleteProgram(upsampleProgram);
       for (const query of pendingTimerQueries) gl.deleteQuery(query);
     };
-  }, [screenSourceCanvasRef, perfMetricsRef]);
+  }, [screenSourceCanvasRef, perfMetricsRef, useCellularImage]);
 
   return (
     <>
@@ -657,6 +727,13 @@ export function Compositor({
         loop
         playsInline
         preload="auto"
+        crossOrigin="anonymous"
+        style={{ display: "none" }}
+      />
+      <img
+        ref={imageRef}
+        src={atlasImagePath}
+        alt=""
         crossOrigin="anonymous"
         style={{ display: "none" }}
       />
