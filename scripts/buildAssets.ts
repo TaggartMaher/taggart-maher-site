@@ -1,27 +1,16 @@
 // Build the cellular still atlas from the Blender renders.
 //
-// A single ffmpeg invocation reads the beauty and per-cell EXRs
-// directly as float, pre-scales the cells by 1/E (the screen emission
-// strength), packs the (1 + N²) tiles into a tileCols × tileRows grid,
-// applies the sRGB OETF (via zscale), and encodes to public/composite/
-// atlas.png as 8-bit rgb24. The OETF gives dark values much more bit
-// budget than linear 8-bit (linear byte 1 = 0.004 linear; sRGB byte 1 =
-// 0.0003 linear). The shader undoes the OETF explicitly with
-// `srgbToLinear`.
-//
-// Going EXR -> ffmpeg directly (no intermediate PNG) avoids a redundant
-// 8-bit quantization before the encoder.
+// One ffmpeg invocation reads the beauty + per-cell EXRs as float,
+// pre-scales each cell by 1/E (the screen emission strength), packs
+// the (1 + N²) tiles into a tileCols × tileRows grid, applies the sRGB
+// OETF, and encodes to public/composite/atlas.png as 8-bit rgb24. See
+// COMPOSITE_THEORY.md for the math and the role of each step.
 //
 // Idempotent: rebuilds only when any input EXR is newer than atlas.png
 // or when the encoding tag changes.
 //
-// If BLENDER_RENDERS_DIR is unset or any required input is missing, the
-// script logs a warning and exits 0 — the site falls back to no-CGI at
-// runtime.
-//
-// Tooling: requires ffmpeg built with libzimg (the `zscale` filter) for
-// the linear → sRGB OETF + BT.709 matrix conversion, and oiiotool for
-// per-cell channel flattening and emission-strength detection.
+// If BLENDER_RENDERS_DIR is unset or any input is missing, the script
+// warns and exits 0 — the site falls back to no-CGI at runtime.
 
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -29,9 +18,6 @@ import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 import { cellsPerSide, tileCols, tileRows } from "../src/config";
 
-// Load BLENDER_RENDERS_DIR (and friends) from the repo's .env so the script
-// works the same whether invoked directly or via an npm script. Silent if
-// .env is absent — the BLENDER_RENDERS_DIR check below handles that case.
 try {
   process.loadEnvFile(join(dirname(fileURLToPath(import.meta.url)), "..", ".env"));
 } catch {
@@ -43,24 +29,14 @@ const compositeDir = join(repoRoot, "public", "composite");
 const atlasImagePath = join(compositeDir, "atlas.png");
 const atlasMetaPath = join(compositeDir, "atlasMeta.json");
 
-// `scale` is the screen emission strength E, recovered from the cell
-// EXRs as max-over-pixels of Σ_K cell_K. Each cell's material emits
-// (within_U, within_V, 1) × intensity, so the B-channel of the sum is
-// the total bounce light at the wall — i.e. whitelight. Cells are
-// divided by E before quantization so they fit in [0,1]; the shader
-// multiplies the bounce contribution back by E so the emitter UV math
-// keeps its full dynamic range.
-//
-// `encoding` records the transfer characteristic applied before 8-bit
-// quantization. We use sRGB OETF so dim bounce-light values survive
-// 8-bit quantization. Bumping `encoding` invalidates the atlas.
+// `scale` is the screen emission strength E, divided out of the cell
+// tiles in the build and multiplied back in by the shader.
+// `encoding` is the transfer-characteristic tag; bumping it invalidates
+// the atlas. `cellGrid` is the per-cell (col, row) lookup the shader
+// uses to weight Σ_K col_K · cell_K.b correctly.
 interface AtlasMeta {
   scale: number;
   encoding: string;
-  // Per cell-index entry [col, row] in the screen-plane subdivision,
-  // derived from blender/generate_screen_cells.py's manifest. Lets the
-  // shader weight cell-K contributions by their actual position without
-  // hardcoding bmesh's subdivide+grid_fill order.
   cellGrid: Array<[number, number]>;
 }
 
@@ -90,7 +66,7 @@ function buildCellGrid(
     return grid;
   }
   console.warn(
-    "[assets] cells_manifest.json missing or incomplete — falling back to identity cell order. Re-run blender/generate_screen_cells.py to fix.",
+    "[assets] cells_manifest.json missing or incomplete — falling back to identity cell order.",
   );
   const cellsPerSideLocal = Math.round(Math.sqrt(expectedCells));
   for (let cellIndex = 0; cellIndex < expectedCells; cellIndex += 1) {
@@ -113,9 +89,8 @@ function detectTileDimensions(samplePath: string): { width: number; height: numb
   return { width: parseInt(match[1], 10), height: parseInt(match[2], 10) };
 }
 
-// Sum all flattened cell EXRs and return the max channel of the sum.
-// By construction Σ_K cell_K.b = whitelight per pixel, so max over
-// pixels recovers the screen emission strength E.
+// E = max-over-pixels of Σ_K cell_K (B-channel of the sum is whitelight
+// by construction; max ≤ E for R and G).
 function detectAtlasScaleFromFlatCells(flatCellPaths: string[]): number {
   if (flatCellPaths.length === 0) {
     throw new Error("[assets] cannot detect scale from empty cell list");
@@ -193,10 +168,8 @@ const beautyPresent = existsSync(beautyFrameOnePath);
 let newestInputMtime = 0;
 if (beautyPresent) newestInputMtime = Math.max(newestInputMtime, fileMtime(beautyFrameOnePath));
 
-// Cell EXRs live in `$BLENDER_RENDERS_DIR/cells/`, padded form
-// `screen_K_0001.exr` (correct Blender output, what the File Output
-// node writes once denoising data is enabled) — fall back to the
-// unpadded form if a transition file is on disk.
+// Cell EXRs live in `$BLENDER_RENDERS_DIR/cells/` as
+// `screen_K_0001.exr` (or unpadded `screen_K_.exr` from older runs).
 const cellsDir = join(blenderRendersDir, "cells");
 const cellCount = cellsPerSide * cellsPerSide;
 const cellFrameOnePaths: string[] = [];
@@ -232,12 +205,10 @@ const stillNeedsEncode = !atlasFresh || !encodingMatches;
 let atlasScale: number;
 
 if (stillNeedsEncode) {
-  // Blender's File Output node in OPEN_EXR_MULTILAYER mode names the
-  // cell's channels `screen_K.R/G/B/A`, but ffmpeg's openexr decoder
-  // only reads root-level R/G/B/A. Use oiiotool to rename each cell's
-  // channels to root-level into a temporary single-layer EXR before
-  // feeding the ffmpeg xstack invocation. The flat EXRs also feed the
-  // emission-strength detection step below.
+  // Blender writes cell channels as `screen_K.R/G/B/A` in a multilayer
+  // EXR; ffmpeg's openexr decoder only reads root-level R/G/B/A, so
+  // oiiotool renames them to a flat single-layer EXR per cell. The
+  // flat EXRs also feed the emission-strength detection below.
   const flattenedCellsDir = join(compositeDir, ".cell-flat");
   mkdirSync(flattenedCellsDir, { recursive: true });
   const flattenedCellPaths: string[] = [];
@@ -267,12 +238,10 @@ if (stillNeedsEncode) {
   const inverseScale = 1 / atlasScale;
   console.log(`[assets] scale = ${atlasScale.toFixed(6)}, encoding = ${atlasEncoding}`);
 
-  // Pack the (1 + N²) logical tiles into a tileCols × tileRows grid
-  // derived from cellsPerSide (see src/config.ts). Inputs are passed
-  // in order beauty/s_0..s_{N²-1}; xstack with an explicit `layout`
-  // fills row-major from the PNG top, which after the
-  // UNPACK_FLIP_Y_WEBGL upload puts beauty at v_uv.y near 1 — the
-  // shader's tileUv inverts the row direction to compensate.
+  // Pack the (1 + N²) tiles into a tileCols × tileRows grid in order
+  // beauty / s_0 .. s_{N²-1}. xstack fills row-major from the PNG top;
+  // the shader's tileUv inverts the row direction to compensate for
+  // UNPACK_FLIP_Y_WEBGL.
   const tileCount = 1 + cellCount;
   const tileDims = detectTileDimensions(beautyFrameOnePath);
   const layoutPositions: string[] = [];
@@ -330,9 +299,6 @@ if (stillNeedsEncode) {
   console.log(`[assets] atlas up to date at ${atlasImagePath} (scale = ${atlasScale.toFixed(6)})`);
 }
 
-// Metadata sidecar: the runtime fetches this and feeds the scale into
-// the shader so the bounce term is multiplied back to the pre-scaled
-// scene-referred magnitude.
 const cellsManifest = readCellsManifest(cellsDir);
 const cellGrid = buildCellGrid(cellsManifest, cellCount);
 writeAtlasMeta({ scale: atlasScale, encoding: atlasEncoding, cellGrid });

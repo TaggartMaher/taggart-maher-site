@@ -8,33 +8,21 @@ import {
   vertexShaderSource,
 } from "./shader";
 
-// Maximum depth of the dual-Kawase chain. Each level halves resolution per
-// axis, so MAX_BLUR_CHAIN_DEPTH = 6 means the deepest level is 1/64th of
-// the source's edge length and 1/4096th of its area — plenty of headroom
-// for very large effective radii without burning memory on a level we'll
-// never use.
+// Maximum depth of the dual-Kawase chain. Each level halves resolution
+// per axis; depth 6 means the deepest level is 1/64th of the source's
+// edge length.
 const MAX_BLUR_CHAIN_DEPTH = 6;
 
 interface CompositorProps {
-  // Canvas providing the live screen-content image. The compositor
-  // re-uploads it as the `u_screen` texture every frame, so any
-  // 2D-canvas drawing the parent does is reflected in the bounce light
-  // on the next frame. May start null and be assigned later — the
-  // compositor waits for it before rendering.
+  // Canvas the compositor uploads as `u_screen` each frame.
   screenSourceCanvasRef: React.RefObject<HTMLCanvasElement | null>;
   // Effective blur radius (in screen-texture pixels) applied to the
-  // screen-content image before it feeds the composite, via a dual-Kawase
-  // downsample/upsample chain. 0 disables the blur passes and the
-  // composite samples the raw screen texture. The host maps the radius to
-  // a chain depth and a final-pass kernel offset.
+  // screen-content image before compositing. 0 disables the blur.
   screenBlurRadiusPx: number;
   // Box-average radius (in atlas texels) applied to the per-cell
-  // accumulation in the cellular shader. Smooths cell-boundary flicker;
-  // 0 disables the average. Integer; clamped to [0, 5] in the shader.
+  // accumulation. Smooths cell-boundary flicker; 0 disables.
   lookupBlurRadius: number;
-  // Per-axis linear stretch around (0.5, 0.5) applied to the emitter UV
-  // before sampling the screen content. 1.0 is the physical default;
-  // > 1 pushes that axis's edges outward.
+  // Per-axis linear stretch around (0.5, 0.5) applied to emitterUv.
   uStretch: number;
   vStretch: number;
   // Per-axis translation added to emitterUv after the stretch.
@@ -42,15 +30,12 @@ interface CompositorProps {
   vOffset: number;
   // Symmetric inset of the valid screen-content sampling window.
   edgeCutoff: number;
-  // Linear-light color adjustments applied to the screen-content sample
-  // before it multiplies into the bounce. 1.0 is the identity for each.
+  // Linear-light adjustments applied to the screen-content sample
+  // before it multiplies into the bounce. 1.0 is the identity.
   screenSaturation: number;
   screenContrast: number;
   screenBrightness: number;
-  // Optional sink for per-frame performance metrics. The compositor
-  // mutates the referenced object each frame; readers (the debug menu)
-  // poll it on their own cadence so metric updates don't drive React
-  // renders here.
+  // Optional sink for per-frame performance metrics, mutated each frame.
   perfMetricsRef?: React.RefObject<PerfMetrics>;
 }
 
@@ -153,8 +138,6 @@ export function Compositor({
     gl.deleteShader(downsampleFragmentShader);
     gl.deleteShader(upsampleFragmentShader);
 
-    // All three vertex shaders declare a_position at layout location 0,
-    // so the single fullscreen-quad VAO below works for every program.
     const positionAttribLocation = 0;
     const atlasUniformLocation = gl.getUniformLocation(program, "u_atlas");
     const screenUniformLocation = gl.getUniformLocation(program, "u_screen");
@@ -206,13 +189,12 @@ export function Compositor({
     const atlasTexture = makeTexture(0);
     const screenTexture = makeTexture(1);
 
-    // Dual-Kawase blur chain. Level 0 has the screen source's native
-    // dimensions; each subsequent level halves both axes. The downsample
-    // pass renders into level k from level k-1; the upsample pass then
-    // walks back up. After upsampling completes, level 0 holds the final
-    // blurred image and the composite samples it (bound to texture unit
-    // BLUR_OUTPUT_UNIT). Texture unit BLUR_READ_UNIT is the dynamic source
-    // unit each pass binds its read-from level into.
+    // Dual-Kawase blur chain. Level 0 is the screen source's native
+    // resolution; each level halves both axes. Downsample writes
+    // level k from level k-1, then upsample walks back to level 0.
+    // BLUR_OUTPUT_UNIT is where level 0 (the final blurred image) is
+    // bound for the composite to sample; BLUR_READ_UNIT is the dynamic
+    // source unit each pass binds its read-from level into.
     const BLUR_READ_UNIT = 4;
     const BLUR_OUTPUT_UNIT = 3;
 
@@ -279,21 +261,14 @@ export function Compositor({
     }
 
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
-
-    // Don't let the browser apply transfer-function conversions on upload.
-    // The atlas is sRGB-OETF-encoded by the build and the screen-content
-    // PNG is sRGB by definition; the shader does the EOTF explicitly via
-    // `srgbToLinear`. NONE makes the round-trip predictable across browsers.
+    // Browser does no transfer conversion on upload; the shader does
+    // sRGB <-> linear explicitly.
     gl.pixelStorei(gl.UNPACK_COLORSPACE_CONVERSION_WEBGL, gl.NONE);
 
     let cancelled = false;
     let animationFrameHandle: number | null = null;
     let atlasImageUploaded = false;
 
-    // Perf instrumentation. The render loop updates these scalars each
-    // frame and writes a smoothed snapshot into perfMetricsRef so the
-    // debug menu (or any other reader) can poll without coupling to the
-    // render cadence.
     const timerQueryExtension = gl.getExtension("EXT_disjoint_timer_query_webgl2");
     const pendingTimerQueries: WebGLQuery[] = [];
     const exponentialAverageAlpha = 0.1;
@@ -342,15 +317,13 @@ export function Compositor({
       }
     }
 
-    // The build pipeline pre-scales cell tiles into [0,1] and writes the
-    // scale factor here. Until the metadata arrives we render with
-    // scale = 1 (visible scene, no bounce magnitude correction).
+    // E from the build pipeline (cells were divided by 1/E to fit
+    // [0,1]); the shader multiplies the bounce term back by it.
+    // 1 until atlasMeta.json arrives.
     let atlasScale = 1;
 
-    // Per-cell screen-plane (col, row), packed as a flat Int32Array for
-    // glUniform2iv. Default is identity ordering — wrong for the real
-    // bmesh subdivide+grid_fill output, so the screen-content lookup is
-    // garbled until atlasMeta.json arrives and we overwrite it.
+    // Per-cell screen-plane (col, row), uploaded as ivec2[CELL_COUNT].
+    // Identity until atlasMeta.json overwrites it.
     const cellCount = cellsPerSide * cellsPerSide;
     const cellGridUniformData = new Int32Array(cellCount * 2);
     for (let cellIndex = 0; cellIndex < cellCount; cellIndex += 1) {
@@ -415,9 +388,7 @@ export function Compositor({
         }
       }
 
-      // Atlas image is static; upload once when it first becomes ready.
-      // Re-uploading the wide RGB PNG every frame would tank fps for no
-      // gain — nothing about it changes between frames.
+      // Atlas is static; upload once when first ready.
       if (!atlasImageUploaded && image.complete && image.naturalWidth > 0) {
         gl.activeTexture(gl.TEXTURE0);
         gl.bindTexture(gl.TEXTURE_2D, atlasTexture);
@@ -425,25 +396,20 @@ export function Compositor({
         atlasImageUploaded = true;
       }
 
-      // Upload the latest screen-content frame from the parent's canvas.
-      // Re-uploading every frame is cheap for a ~1024x630 canvas and
-      // keeps draggable / live edits in sync without a separate signal.
+      // Upload the latest screen-content frame each rAF tick.
       const screenSource = screenSourceCanvasRef.current;
       if (!screenSource) return;
       gl.activeTexture(gl.TEXTURE1);
       gl.bindTexture(gl.TEXTURE_2D, screenTexture);
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, screenSource);
 
-      // Run the dual-Kawase blur chain if the user has dialed in a
-      // non-zero radius. The composite below will then sample the final
-      // blurred result from BLUR_OUTPUT_UNIT instead of unit 1.
+      // Run the dual-Kawase blur chain if radius > 0. The composite
+      // below samples the final blurred result from BLUR_OUTPUT_UNIT
+      // instead of unit 1.
       //
-      // Mapping from radius (in source pixels) to chain parameters:
-      // each down/up cycle roughly doubles the effective Gaussian sigma,
-      // so a chain of depth N with kernel offset O reaches an effective
-      // radius around (2^N) * O source pixels. We pick N = round(log2 R)
-      // clamped to the chain capacity, and let the residual fall into O
-      // (clamped to a sane range so the kernel doesn't visibly tile).
+      // Effective radius scales as ~(2^chainDepth) × kernelOffset
+      // source pixels. Pick chainDepth = round(log2 R) (clamped) and
+      // let the residual fall into kernelOffset.
       const blurRadiusPx = Math.max(0, Math.floor(screenBlurRadiusPxRef.current));
       const screenSourceWidth = screenSource.width;
       const screenSourceHeight = screenSource.height;
