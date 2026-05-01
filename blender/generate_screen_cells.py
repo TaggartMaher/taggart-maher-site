@@ -22,7 +22,38 @@ import bpy # type: ignore
 import bmesh # type: ignore
 
 
-CELLS_PER_SIDE = 9
+REPO_ROOT = os.path.expanduser("~/rr/taggart-maher-site")
+
+
+def _read_env_value(name):
+    env_path = os.path.join(REPO_ROOT, ".env")
+    if not os.path.isfile(env_path):
+        return None
+    try:
+        with open(env_path, "r", encoding="utf-8") as env_file:
+            for line in env_file:
+                stripped = line.strip()
+                if not stripped or stripped.startswith("#") or "=" not in stripped:
+                    continue
+                key, _, raw_value = stripped.partition("=")
+                if key.strip() == name:
+                    return raw_value.strip().strip('"').strip("'")
+    except OSError:
+        return None
+    return None
+
+
+def _read_int_env(name, default):
+    raw = _read_env_value(name)
+    if raw is None:
+        return default
+    try:
+        return int(raw)
+    except ValueError:
+        return default
+
+
+CELLS_PER_SIDE = _read_int_env("CELLS_PER_SIDE", 9)
 OUTPUT_DIRECTORY = "//renders/cells/"
 
 SCREEN_NAME = "SCREEN"
@@ -249,8 +280,9 @@ def setup_cell_compositor(output_directory):
 
 def write_cells_manifest(cells_per_side, output_directory):
     """Map face_index -> screen-plane (col, row). bmesh's
-    subdivide+grid_fill doesn't emit faces row-major; the web build
-    consumes this manifest to upload `u_cellGrid` to the shader."""
+    subdivide+grid_fill doesn't emit faces row-major; the Rust bake
+    binary consumes this manifest to weight Σ_K (col_K, row_K) ·
+    cell_K.b correctly when assembling position.exr."""
     manifest_cells = []
     for face_index in range(cells_per_side * cells_per_side):
         cell_object = bpy.data.objects.get(f"{CELL_PREFIX}{face_index}")
