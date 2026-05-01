@@ -1,6 +1,7 @@
-// Portfolio content. Real data from Taggart's resume + projects + blog +
-// mystery. Bracketed placeholders are intentional — the user will fill them
-// during the content pass.
+// Portfolio content for the sections that stay hardcoded: About,
+// Experience, Mystery. Projects and Blog have moved to
+// `./content/{projects,blog}` where each entry has a typed
+// `metadata.ts` and a sibling `index.md` body.
 
 export interface AboutData {
   headline: string;
@@ -17,29 +18,6 @@ export interface ExperienceRow {
   where: string;
   kind: "work" | "school";
   bullets: string[];
-}
-
-export interface ProjectEntry {
-  id: string;
-  name: string;
-  year: string;
-  status?: string;
-  tag: string;
-  icon: string;
-  oneliner: string;
-  details: string;
-  stack: string[];
-  links: Array<{ label: string; href: string }>;
-}
-
-export interface BlogEntry {
-  id: string;
-  title: string;
-  year: string;
-  tag: string;
-  excerpt: string;
-  readtime: string;
-  href: string;
 }
 
 export interface MysteryEntry {
@@ -59,8 +37,6 @@ export interface PortfolioData {
   blurb: string;
   about: AboutData;
   experience: ExperienceRow[];
-  projects: ProjectEntry[];
-  blog: BlogEntry[];
   mystery: MysteryEntry[];
 }
 
@@ -187,178 +163,6 @@ export const PORTFOLIO: PortfolioData = {
       where: "Howard County, MD",
       kind: "school",
       bullets: ["[ Anything you want to add — coursework, clubs, awards ]"],
-    },
-  ],
-
-  projects: [
-    {
-      id: "waybranch",
-      name: "Waybranch",
-      year: "2026",
-      status: "Upcoming",
-      tag: "VFX · Vegetation",
-      icon: "🌿",
-      oneliner: "Dynamic VFX vegetation generator. Plants that grow, sway, react.",
-      details:
-        "[ Replace with the real pitch — what kind of generator, what runtime, who it's for, what makes it different from existing tools. ]",
-      stack: ["[ engine ]", "[ language ]", "[ shader stack ]"],
-      links: [
-        { label: "Site", href: "#" },
-        { label: "Devlog", href: "#" },
-      ],
-    },
-    {
-      id: "token-monster",
-      name: "Token Monster",
-      year: "2025",
-      tag: "AI · Tooling",
-      icon: "🐉",
-      oneliner: "A layered AI agent programming interface.",
-      details:
-        "[ What 'layered' means here — orchestration model, UI affordances, what it solves that flat agent tools don't. ]",
-      stack: ["[ language ]", "[ model API ]", "[ frontend ]"],
-      links: [
-        { label: "Demo", href: "#" },
-        { label: "Repo", href: "#" },
-      ],
-    },
-    {
-      id: "respiratory-model",
-      name: "Respiratory Model",
-      year: "2025",
-      tag: "HPC · Medical Sim",
-      icon: "🫁",
-      oneliner: "Anatomically accurate human airway simulation. Billions of points, real-time.",
-      details:
-        "Independent academic research collaboration with Dr. Raoul Schorer at Geneva University Hospitals. Stochastic simulation correlating capnography (CO₂) measurements with lung morphology, for academic publication. Built a full-stack cross-platform interface for real-time manipulation of complex mathematical morphology parameters, plus an algorithm to manage billions of 3D points at speed.",
-      stack: ["Rust", "wgpu / WGSL", "egui", "winit", "WebAssembly"],
-      links: [
-        { label: "Writeup", href: "#" },
-        { label: "Repo", href: "#" },
-      ],
-    },
-    {
-      id: "rc-audio",
-      name: "RC Car Audio Simulation",
-      year: "2024",
-      tag: "Audio · Fluid Sim",
-      icon: "🏎",
-      oneliner:
-        "Realistic onboard engine audio for RC cars, generated via open-source fluid simulation.",
-      details:
-        "[ Which fluid simulator, how the audio is derived from the sim, hardware setup on the car, demo recordings. ]",
-      stack: ["[ fluid sim ]", "[ DSP / audio runtime ]", "[ embedded ]"],
-      links: [
-        { label: "Video", href: "#" },
-        { label: "Code", href: "#" },
-      ],
-    },
-    {
-      id: "blueshift",
-      name: "Project Blueshift",
-      year: "2023",
-      tag: "Minecraft · Realtime Render",
-      icon: "⛏",
-      oneliner:
-        "Minecraft plugin that renders node-based megastructures in real time for unique gameplay.",
-      details:
-        "[ Node graph model, how rendering survives chunk loading, what gameplay it enables, server scale. ]",
-      stack: ["Java", "Spigot/Paper", "[ render strategy ]"],
-      links: [
-        { label: "Plugin", href: "#" },
-        { label: "Demo Video", href: "#" },
-      ],
-    },
-    {
-      id: "oneclickdocs",
-      name: "One Click Docs BMS",
-      year: "2024",
-      tag: "Orchestration · SaaS",
-      icon: "📑",
-      oneliner:
-        "App orchestration software for business management systems — deploy a fully-featured demo per lead in minutes.",
-      details:
-        "Co-founded as a software company. Architected an in-house platform that deploys and manages client web apps with full account management, notification, and CRM features. Companion products included a CRM-driven BMS (cut paperwork ~50%), an ICAO Travel Visa Photobooth (AWS Rekognition + custom TS image processing), and OCR passport scanning tuned for elderly users with shaky hands.",
-      stack: ["TypeScript", "React", "Node", "Express", "AWS", "Docker", "Puppeteer"],
-      links: [{ label: "Site", href: "#" }],
-    },
-    {
-      id: "bond-synth",
-      name: "Bond Synth",
-      year: "2023",
-      tag: "Desktop · Insurance Automation",
-      icon: "🪪",
-      oneliner:
-        "Desktop tool that automates insurance agent workflows — replaced 20+ hours/week of manual work.",
-      details:
-        "Built for an insurance agent client of One Click Docs. Combined web scraping + document parsing to fully automate a workflow that previously consumed an entire day per week.",
-      stack: ["TypeScript", "Puppeteer", "Document parsing"],
-      links: [{ label: "Site", href: "#" }],
-    },
-    {
-      id: "wholesale-miner",
-      name: "Wholesale Ecommerce Data Miner",
-      year: "2022",
-      tag: "Scraping · Ecommerce",
-      icon: "🛋",
-      oneliner:
-        "Product data miner for luxury furniture wholesale. Took catalog from 2,000 → 20,000 SKUs.",
-      details:
-        "Built at Classic Imports & Design. Wholesale suppliers didn't provide machine-readable feeds, so I wrote a Python + Selenium pipeline to scrape catalog pages for images, specs, and product data. Doubled business revenue in under 12 months — confirmed via Google Analytics.",
-      stack: ["Python", "Selenium", "PHP", "JavaScript"],
-      links: [{ label: "Live site", href: "https://classicimportusa.com/" }],
-    },
-    {
-      id: "cold-glass-cad",
-      name: "Cold Glass CAD Drawings",
-      year: "2022",
-      tag: "CAD · Glass Art",
-      icon: "🔷",
-      oneliner: "ASME/ISO technical drawings for CNC-machined glass and steel.",
-      details:
-        "Freelance for Eastern Tech Corporation. Translated hand-drawn sketches into manufacturing-standard technical drawings for an overseas manufacturer using Fusion 360.",
-      stack: ["Fusion 360", "ASME / ISO drafting standards"],
-      links: [{ label: "Gallery", href: "#" }],
-    },
-  ],
-
-  blog: [
-    {
-      id: "truncated-tetrahedron",
-      title: "A Truncated Tetrahedron Obsession",
-      year: "2024",
-      tag: "Geometry",
-      excerpt: "[ Why I can't stop thinking about this particular polyhedron. ]",
-      readtime: "[ X min ]",
-      href: "#",
-    },
-    {
-      id: "scraping-forms",
-      title: "Advanced Web Scraping for Forms and Logins",
-      year: "2022",
-      tag: "Engineering",
-      excerpt:
-        "[ Practical techniques for getting past auth-walled forms when you have legitimate access. ]",
-      readtime: "[ X min ]",
-      href: "#",
-    },
-    {
-      id: "branch-printing",
-      title: "3D Printing Branch Structures",
-      year: "2021",
-      tag: "Fabrication",
-      excerpt: "[ Notes on slicing, supports, and what works for organic branch geometry. ]",
-      readtime: "[ X min ]",
-      href: "#",
-    },
-    {
-      id: "the-forge",
-      title: "The Forge",
-      year: "2021",
-      tag: "Hardware",
-      excerpt: "[ My desktop build — parts, reasoning, photos, what I'd do differently. ]",
-      readtime: "[ X min ]",
-      href: "#",
     },
   ],
 
