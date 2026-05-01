@@ -1,83 +1,50 @@
-// Shared debug-menu state. The menu mutates this; the screen overlay reads
-// it to decide what to paint to the screen DOM and the screen-content
+// Shared debug-menu state. The menu mutates this; the screen overlay
+// reads it to decide what to paint to the DOM and the screen-content
 // texture.
 
 import { testImages } from "../composite/testImages";
 
 export interface DebugSettings {
-  // When true, the Portfolio DOM overlay (and the overlay div's own
-  // background fill) are not rendered, so the composited scene behind
-  // the overlay is visible through the screen-rect area. Image / color
-  // backgrounds and the draggable square still render if their own
-  // checkboxes are enabled.
+  // Hide the Portfolio DOM overlay so the composited scene shows
+  // through. Image / color backgrounds and the draggable square still
+  // render if enabled.
   hidePageOverlay: boolean;
-  // When true, pause the atlas video on its first frame so iteration
-  // doesn't have to wait through the loop. Bounce light + the
-  // draggable square / image background still update live; only the
-  // beauty/whitelight/position passes freeze.
-  freezeFirstFrame: boolean;
-  // When true, source the atlas from the cellular still PNG (frame 1)
-  // instead of the H.264 MP4. The still has `2 + N²` tiles
-  // `[ beauty | whitelight | screen_0 | … | screen_{N²-1} ]`; the shader
-  // picks the dominant cell per pixel and looks up the user screen at
-  // that cell's centroid. Bounce passes are static in this mode (single
-  // frame), but free of 4:2:0 chroma artifacts and discretized into
-  // N² emitter positions, which survives the lossless image path
-  // cleanly.
-  useCellularImage: boolean;
   imageBackgroundEnabled: boolean;
   imageBackgroundUrl: string;
-  // When true, the image background still feeds the screen-content
-  // canvas (so the bounce light reflects it) but the DOM <img> overlay
-  // is not rendered, so the user can see the rendered scene through
-  // the screen-rect area.
+  // Image background still feeds the screen-content canvas, but the
+  // DOM <img> overlay is hidden.
   hideImageOverlay: boolean;
   colorBackgroundEnabled: boolean;
   colorBackgroundColor: string;
   squareEnabled: boolean;
   squareColor: string;
-  // Same idea as hideImageOverlay, for the draggable square.
   hideSquareOverlay: boolean;
-  // Square position as normalized coords of the square's top-left in
-  // [0, 1] of the screen plane's UV space. Persists across re-renders so
-  // the square stays put while the user toggles other options.
+  // Square's top-left in [0,1] screen-plane UV space.
   squareNormalizedX: number;
   squareNormalizedY: number;
-  // Effective blur radius applied to the screen-content image before it
-  // feeds the composite, in screen-texture pixels, via a dual-Kawase
-  // downsample/upsample chain. 0 disables the blur.
+  // Blur radius (in screen-texture pixels) applied to the screen
+  // content before it feeds the composite. 0 disables.
   screenBlurRadiusPx: number;
-  // Box-average radius (in atlas texels) applied to the per-cell
-  // brightness reduction before argmax in the cellular-image shader.
-  // Smooths cell-boundary flicker where two cells are nearly equally
-  // bright at a pixel. Integer; clamped to [0, 5] in the shader.
+  // Box-average radius (in atlas texels) for the per-cell shader
+  // accumulation. 0 disables. Integer; clamped to [0, 5] in the shader.
   lookupBlurRadius: number;
-  // Linear stretch applied to emitterUv around (0.5, 0.5) before sampling
-  // the screen content, per axis:
+  // Per-axis linear stretch applied to emitterUv around (0.5, 0.5):
   //   u_out = (u - 0.5) * uStretch + 0.5
   //   v_out = (v - 0.5) * vStretch + 0.5
-  // 1.0 is the physically-derived UV; > 1 pushes the edges of that axis
-  // outward, < 1 pulls them in. Compensates for residual nonlinearity in
-  // the position pass at the edges of the screen.
+  // 1.0 is the physically-derived UV.
   uStretch: number;
   vStretch: number;
-  // Per-axis translation added to the emitterUv after the stretch:
-  //   u_out = (u - 0.5) * uStretch + 0.5 + uOffset
-  //   v_out = (v - 0.5) * vStretch + 0.5 + vOffset
-  // Lets the screen content slide across the lit area to compensate for
-  // residual mis-registration after the stretch is dialed in.
+  // Per-axis translation added to emitterUv after the stretch.
   uOffset: number;
   vOffset: number;
-  // Symmetric inset (in canvas-UV units) defining the valid screen-content
-  // sampling window: [margin, 1 - margin] on both axes. Where the
-  // (stretched + offset) emitterUv falls outside this window, the screen
-  // contribution is zeroed instead of clamping to the texture edge — kills
-  // the edge-pixel fill where the position pass overshoots the screen.
+  // Symmetric inset defining the valid screen-content sampling window
+  // [margin, 1 - margin] on each axis. Outside the window, the screen
+  // contribution is zeroed.
   edgeCutoff: number;
-  // Color adjustments applied to the screen-content sample (in linear
-  // light) before it multiplies into the bounce. 1.0 is a no-op for all
-  // three. Saturation lerps around Rec.709 luma; contrast scales around
-  // 0.5; brightness is a flat multiplier.
+  // Linear-light adjustments applied to the screen-content sample
+  // before it multiplies into the bounce. 1.0 is the identity.
+  // Saturation lerps around Rec.709 luma; contrast scales around 0.5;
+  // brightness is a flat multiplier.
   screenSaturation: number;
   screenContrast: number;
   screenBrightness: number;
@@ -85,8 +52,6 @@ export interface DebugSettings {
 
 export const defaultDebugSettings: DebugSettings = {
   hidePageOverlay: false,
-  freezeFirstFrame: false,
-  useCellularImage: true,
   imageBackgroundEnabled: false,
   imageBackgroundUrl: testImages[0].url,
   hideImageOverlay: false,

@@ -76,22 +76,6 @@ export function DebugMenu({ settings, onChange, perfMetricsRef }: DebugMenuProps
           <span>Hide page overlay</span>
         </label>
         <label className="debug-menu-row">
-          <input
-            type="checkbox"
-            checked={settings.freezeFirstFrame}
-            onChange={(event) => onChange({ ...settings, freezeFirstFrame: event.target.checked })}
-          />
-          <span>Freeze first frame</span>
-        </label>
-        <label className="debug-menu-row">
-          <input
-            type="checkbox"
-            checked={settings.useCellularImage}
-            onChange={(event) => onChange({ ...settings, useCellularImage: event.target.checked })}
-          />
-          <span>Cellular image</span>
-        </label>
-        <label className="debug-menu-row">
           <span>Screen blur ({settings.screenBlurRadiusPx}px)</span>
           <input
             className="debug-menu-control"
@@ -321,10 +305,6 @@ export function DebugMenu({ settings, onChange, perfMetricsRef }: DebugMenuProps
         <div className="debug-menu-row">
           <span>Display FPS</span>
           <span>{formatFps(perf.displayFps)}</span>
-        </div>
-        <div className="debug-menu-row">
-          <span>Video FPS</span>
-          <span>{formatFps(perf.videoFps)}</span>
         </div>
         <div className="debug-menu-row">
           <span>CPU / frame</span>

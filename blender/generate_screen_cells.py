@@ -1,23 +1,18 @@
 """
-Subdivide SCREEN's mesh into N x N cells, turn each cell face into its own
-object with its own Cycles Light Group, and wire up the Compositor so each
-light group renders to its own EXR sequence.
+Subdivide SCREEN's mesh into N×N cells, turn each cell face into its own
+object with its own Cycles Light Group, and wire up the Compositor so
+each light group renders to its own EXR sequence.
 
-Usage (Blender 5.1.1):
-  1. Open this file in Blender's Text Editor.
-  2. Edit CELLS_PER_SIDE and OUTPUT_DIRECTORY below.
-  3. Alt-P (Run Script). Output goes to Info editor and the launching terminal.
-  4. Render the animation: each frame produces N*N files named screen_<i>_####.exr.
-
-Re-runs are idempotent: existing SCREEN_CELL_* objects, screen_* light-group
-AOVs, and the cells_compositor node tree are wiped and rebuilt.
+Re-runs are idempotent: existing SCREEN_CELL_* objects, screen_*
+light-group AOVs, and the cells_compositor node tree are wiped and
+rebuilt.
 
 Assumes the .blend has:
-  - SCREEN              (object — its mesh is copied + subdivided to make cells)
-  - SCREEN_POSITION     (object — its material slot 0 is reused for cells)
-  - ScenePosition       (collection — cells are linked here)
-  - Position            (view layer — light-group AOVs are added here)
-  - render engine: Cycles (light groups don't exist on EEVEE)
+  - SCREEN              — quad whose mesh is subdivided to make cells.
+  - SCREEN_POSITION     — its material slot 0 supplies the cell material.
+  - ScenePosition       — collection cells are linked into.
+  - Position            — view layer; light-group AOVs are added here.
+  - render engine: Cycles.
 """
 
 import json
@@ -27,10 +22,8 @@ import bpy # type: ignore
 import bmesh # type: ignore
 
 
-# === Configuration — edit, then Run Script ============
 CELLS_PER_SIDE = 9
-OUTPUT_DIRECTORY = "//renders/cells/"  # Blender path syntax: // is .blend's folder
-# ======================================================
+OUTPUT_DIRECTORY = "//renders/cells/"
 
 SCREEN_NAME = "SCREEN"
 POSITION_TEMPLATE_NAME = "SCREEN_POSITION"
@@ -39,7 +32,9 @@ CELL_VIEW_LAYER_NAME = "Position"
 CELL_PREFIX = "SCREEN_CELL_"
 LIGHT_GROUP_PREFIX = "screen_"
 COMPOSITOR_TREE_NAME = "cells_compositor"
-RENDER_LAYER_LIGHTGROUP_PREFIX = "Combined_"  # Cycles names lightgroup sockets like Combined_screen_0
+# Cycles names lightgroup sockets `Combined_<groupname>` on the
+# Render Layers node.
+RENDER_LAYER_LIGHTGROUP_PREFIX = "Combined_"
 
 
 def generate_screen_cells(cells_per_side):
@@ -58,12 +53,11 @@ def generate_screen_cells(cells_per_side):
     cell_material = None
     if position_template is not None and position_template.material_slots:
         cell_material = position_template.material_slots[0].material
+        # Disable render for the template — coplanar with cells, would
+        # absorb their emission and blank the AOVs.
         if not position_template.hide_render:
             position_template.hide_render = True
-            print(
-                f"[info] disabled render for '{POSITION_TEMPLATE_NAME}' — it would be"
-                " coplanar with cells and absorb their emission, blanking the AOVs"
-            )
+            print(f"[info] disabled render for '{POSITION_TEMPLATE_NAME}'")
     if cell_material is None:
         print(f"[warn] no material on '{POSITION_TEMPLATE_NAME}' — cells will have none")
 
@@ -168,13 +162,10 @@ def setup_cell_compositor(output_directory):
         print(f"[warn] view layer '{CELL_VIEW_LAYER_NAME}' not found — skipping compositor setup")
         return
 
-    # Denoising guidance passes. The Denoise compositor node takes
-    # Image / Normal / Albedo, and quality with all three plugged in is
-    # noticeably better than RGB-only — especially at the low sample
-    # counts a per-cell pass can afford. Enabling this on the view
-    # layer adds "Denoising Normal" and "Denoising Albedo" outputs to
-    # the render layers node, which the per-cell loop below wires into
-    # each Denoise node alongside its lightgroup-specific Combined input.
+    # Adds "Denoising Normal" and "Denoising Albedo" outputs to the
+    # Render Layers node so per-cell Denoise nodes can use them as
+    # guidance — visibly better than RGB-only denoising at the low
+    # sample counts a per-cell pass affords.
     view_layer.cycles.denoising_store_passes = True
 
     cell_groups = sorted(
@@ -204,17 +195,12 @@ def setup_cell_compositor(output_directory):
     render_layers_node.layer = CELL_VIEW_LAYER_NAME
     render_layers_node.location = (-600, -400)
 
-    # Same denoising guidance feeds every cell's Denoise node — the
-    # geometry doesn't change per light group, so Normal and Albedo
-    # are shared across all 9 wirings.
+    # Geometry doesn't change per light group, so a single Normal /
+    # Albedo source feeds every cell's Denoise node.
     denoise_normal_socket = render_layers_node.outputs.get("Denoising Normal")
     denoise_albedo_socket = render_layers_node.outputs.get("Denoising Albedo")
     if denoise_normal_socket is None or denoise_albedo_socket is None:
-        print(
-            "[warn] denoising data sockets missing from render layers node — re-run after"
-            " enabling 'Denoising Data' on the view layer (or save + reopen the .blend if"
-            " they don't appear immediately)"
-        )
+        print("[warn] denoising data sockets missing from render layers node")
 
     connected = 0
     missing = []
@@ -257,16 +243,14 @@ def setup_cell_compositor(output_directory):
         connected += 1
 
     print(f"[ok] compositor wired: {connected} File Output nodes -> {output_directory}")
-    print("     (files: screen_<i>_####.exr — one node per cell, won't bundle into multilayer)")
     if missing:
-        print(f"[warn] missing render-layer sockets (check Cycles + lightgroups): {missing}")
+        print(f"[warn] missing render-layer sockets: {missing}")
 
 
 def write_cells_manifest(cells_per_side, output_directory):
-    """Dump face_index -> screen-plane (col, row) so the web build doesn't
-    need to reverse-engineer bmesh's subdivide+grid_fill ordering. Uses
-    each cell's stored uv_origin / uv_size custom properties to derive
-    integer grid coordinates in [0, cells_per_side - 1]."""
+    """Map face_index -> screen-plane (col, row). bmesh's
+    subdivide+grid_fill doesn't emit faces row-major; the web build
+    consumes this manifest to upload `u_cellGrid` to the shader."""
     manifest_cells = []
     for face_index in range(cells_per_side * cells_per_side):
         cell_object = bpy.data.objects.get(f"{CELL_PREFIX}{face_index}")
@@ -275,8 +259,8 @@ def write_cells_manifest(cells_per_side, output_directory):
             continue
         uv_origin = tuple(cell_object.get("uv_origin", (0.0, 0.0)))
         uv_size = tuple(cell_object.get("uv_size", (1.0, 1.0)))
-        # uv_size is the same for every cell in a regular subdivision —
-        # uv_origin / uv_size gives the cell's integer (col, row).
+        # uv_size is the same for every cell in a regular subdivision,
+        # so uv_origin / uv_size is the cell's integer (col, row).
         column = round(uv_origin[0] / uv_size[0]) if uv_size[0] > 1e-9 else 0
         row = round(uv_origin[1] / uv_size[1]) if uv_size[1] > 1e-9 else 0
         manifest_cells.append({

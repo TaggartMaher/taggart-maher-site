@@ -7,11 +7,10 @@
 // is unavailable (some browser/OS/driver combinations).
 export interface PerfMetrics {
   displayFps: number;
-  videoFps: number;
   cpuFrameMs: number;
   gpuFrameMs: number | null;
 }
 
 export function makeEmptyPerfMetrics(): PerfMetrics {
-  return { displayFps: 0, videoFps: 0, cpuFrameMs: 0, gpuFrameMs: null };
+  return { displayFps: 0, cpuFrameMs: 0, gpuFrameMs: null };
 }
