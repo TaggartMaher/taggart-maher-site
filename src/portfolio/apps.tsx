@@ -1,5 +1,8 @@
 import { createContext, useContext, useState, type ReactNode } from "react";
 import { PORTFOLIO } from "./data";
+import { PROJECTS } from "./content/projects";
+import { BLOG_POSTS } from "./content/blog";
+import { Markdown } from "./content/Markdown";
 
 export type AppId =
   | "home"
@@ -266,7 +269,7 @@ export function ExperienceApp() {
 // ── Projects (split view) ─────────────────────────────────────────
 
 export function ProjectsApp() {
-  const projects = PORTFOLIO.projects;
+  const projects = PROJECTS;
   const [selectedId, setSelectedId] = useState(projects[0].id);
   const [view, setView] = useState<"grid" | "list">("grid");
   const current = projects.find((project) => project.id === selectedId);
@@ -356,7 +359,7 @@ export function ProjectsApp() {
                 </div>
                 <h2 className="serif">{current.name}</h2>
                 <p className="lede">{current.oneliner}</p>
-                <p>{current.details}</p>
+                <Markdown>{current.content}</Markdown>
                 <div className="kv-mini">
                   <div className="kv-mini-k mono">stack</div>
                   <div className="kv-mini-v">
@@ -387,32 +390,77 @@ export function ProjectsApp() {
 // ── Blog ──────────────────────────────────────────────────────────
 
 export function BlogApp() {
-  const posts = PORTFOLIO.blog;
+  const posts = BLOG_POSTS;
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const selected = selectedId ? posts.find((post) => post.id === selectedId) : null;
+
   return (
     <div className="dol">
-      <Toolbar path="/home/taggart/Blog" />
+      <Toolbar
+        path={"/home/taggart/Blog" + (selected ? "/" + selected.id + ".md" : "")}
+        right={
+          selected && (
+            <div className="vw-toggle mono">
+              <button onClick={() => setSelectedId(null)}>‹ index</button>
+            </div>
+          )
+        }
+      />
       <div className="dol-body">
         <Sidebar active="blog" />
         <div className="doc-pad">
-          <h1 className="serif">Blog</h1>
-          <p className="lede">Posts. Some technical, some less so.</p>
-          <ul className="post-list">
-            {posts.map((post) => (
-              <li key={post.id} className="post">
-                <a href={post.href} className="post-link">
-                  <div className="post-h">
-                    <span className="post-tag mono">{post.tag}</span>
-                    <span className="post-meta mono">
-                      {post.year} · {post.readtime}
-                    </span>
-                  </div>
-                  <h3 className="serif">{post.title}</h3>
-                  <p className="post-ex">{post.excerpt}</p>
-                  <div className="post-go mono">read post →</div>
-                </a>
-              </li>
-            ))}
-          </ul>
+          {selected ? (
+            <article>
+              <div className="post-h">
+                <span className="post-tag mono">
+                  {selected.icon ? selected.icon + " " : ""}
+                  {selected.tag}
+                </span>
+                <span className="post-meta mono">
+                  {selected.date} · {selected.readtime}
+                </span>
+              </div>
+              <Markdown>{selected.content}</Markdown>
+              {selected.links && selected.links.length > 0 && (
+                <div className="detail-links">
+                  {selected.links.map((link) => (
+                    <a key={link.label} className="btn-go mono" href={link.href}>
+                      {link.label} ↗
+                    </a>
+                  ))}
+                </div>
+              )}
+            </article>
+          ) : (
+            <>
+              <h1 className="serif">Blog</h1>
+              <p className="lede">Posts. Some technical, some less so.</p>
+              <ul className="post-list">
+                {posts.map((post) => (
+                  <li key={post.id} className="post">
+                    <button
+                      type="button"
+                      className="post-link"
+                      onClick={() => setSelectedId(post.id)}
+                    >
+                      <div className="post-h">
+                        <span className="post-tag mono">
+                          {post.icon ? post.icon + " " : ""}
+                          {post.tag}
+                        </span>
+                        <span className="post-meta mono">
+                          {post.year} · {post.readtime}
+                        </span>
+                      </div>
+                      <h3 className="serif">{post.title}</h3>
+                      <p className="post-ex">{post.excerpt}</p>
+                      <div className="post-go mono">read post →</div>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
         </div>
       </div>
     </div>
