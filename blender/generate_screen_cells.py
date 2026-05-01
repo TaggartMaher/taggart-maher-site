@@ -20,6 +20,9 @@ Assumes the .blend has:
   - render engine: Cycles (light groups don't exist on EEVEE)
 """
 
+import json
+import os
+
 import bpy # type: ignore
 import bmesh # type: ignore
 
@@ -259,5 +262,41 @@ def setup_cell_compositor(output_directory):
         print(f"[warn] missing render-layer sockets (check Cycles + lightgroups): {missing}")
 
 
+def write_cells_manifest(cells_per_side, output_directory):
+    """Dump face_index -> screen-plane (col, row) so the web build doesn't
+    need to reverse-engineer bmesh's subdivide+grid_fill ordering. Uses
+    each cell's stored uv_origin / uv_size custom properties to derive
+    integer grid coordinates in [0, cells_per_side - 1]."""
+    manifest_cells = []
+    for face_index in range(cells_per_side * cells_per_side):
+        cell_object = bpy.data.objects.get(f"{CELL_PREFIX}{face_index}")
+        if cell_object is None:
+            print(f"[warn] manifest: cell {face_index} not found — skipping")
+            continue
+        uv_origin = tuple(cell_object.get("uv_origin", (0.0, 0.0)))
+        uv_size = tuple(cell_object.get("uv_size", (1.0, 1.0)))
+        # uv_size is the same for every cell in a regular subdivision —
+        # uv_origin / uv_size gives the cell's integer (col, row).
+        column = round(uv_origin[0] / uv_size[0]) if uv_size[0] > 1e-9 else 0
+        row = round(uv_origin[1] / uv_size[1]) if uv_size[1] > 1e-9 else 0
+        manifest_cells.append({
+            "index": face_index,
+            "col": column,
+            "row": row,
+            "uvOrigin": [uv_origin[0], uv_origin[1]],
+            "uvSize": [uv_size[0], uv_size[1]],
+        })
+
+    manifest = {"cellsPerSide": cells_per_side, "cells": manifest_cells}
+    resolved_directory = bpy.path.abspath(output_directory)
+    os.makedirs(resolved_directory, exist_ok=True)
+    manifest_path = os.path.join(resolved_directory, "cells_manifest.json")
+    with open(manifest_path, "w", encoding="utf-8") as manifest_file:
+        json.dump(manifest, manifest_file, indent=2)
+        manifest_file.write("\n")
+    print(f"[ok] wrote cells manifest -> {manifest_path}")
+
+
 generate_screen_cells(CELLS_PER_SIDE)
 setup_cell_compositor(OUTPUT_DIRECTORY)
+write_cells_manifest(CELLS_PER_SIDE, OUTPUT_DIRECTORY)

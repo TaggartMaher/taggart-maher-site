@@ -40,7 +40,7 @@ import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "no
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
-import { cellsPerSide, frameCount, fps } from "../src/config";
+import { cellsPerSide, frameCount, fps, tileCols, tileRows } from "../src/config";
 
 // Load BLENDER_RENDERS_DIR (and friends) from the repo's .env so the script
 // works the same whether invoked directly or via an npm script. Silent if
@@ -74,6 +74,50 @@ const atlasMetaPath = join(compositeDir, "atlasMeta.json");
 interface AtlasMeta {
   scale: number;
   encoding: string;
+  // Per cell-index entry [col, row] in the screen-plane subdivision,
+  // derived from blender/generate_screen_cells.py's manifest. Lets the
+  // shader weight cell-K contributions by their actual position without
+  // hardcoding bmesh's subdivide+grid_fill order.
+  cellGrid: Array<[number, number]>;
+}
+
+interface CellsManifest {
+  cellsPerSide: number;
+  cells: Array<{ index: number; col: number; row: number }>;
+}
+
+function readCellsManifest(cellsDirectory: string): CellsManifest | null {
+  const manifestPath = join(cellsDirectory, "cells_manifest.json");
+  if (!existsSync(manifestPath)) return null;
+  try {
+    return JSON.parse(readFileSync(manifestPath, "utf8")) as CellsManifest;
+  } catch {
+    return null;
+  }
+}
+
+function buildCellGrid(
+  manifest: CellsManifest | null,
+  expectedCells: number,
+): Array<[number, number]> {
+  const grid: Array<[number, number]> = [];
+  if (manifest && manifest.cells.length === expectedCells) {
+    const sorted = [...manifest.cells].sort((a, b) => a.index - b.index);
+    for (const cell of sorted) grid.push([cell.col, cell.row]);
+    return grid;
+  }
+  // No manifest — fall back to identity ordering. This will be wrong
+  // for any real bmesh subdivision (which doesn't emit faces row-major)
+  // and the screen-content lookup will be scrambled until the Blender
+  // script is re-run with the manifest-emitting version.
+  console.warn(
+    "[assets] cells_manifest.json missing or incomplete — falling back to identity cell order. Re-run blender/generate_screen_cells.py to fix.",
+  );
+  const cellsPerSideLocal = Math.round(Math.sqrt(expectedCells));
+  for (let cellIndex = 0; cellIndex < expectedCells; cellIndex += 1) {
+    grid.push([cellIndex % cellsPerSideLocal, Math.floor(cellIndex / cellsPerSideLocal)]);
+  }
+  return grid;
 }
 
 const atlasEncoding = "cellular-srgb-v3";
@@ -115,8 +159,16 @@ function readAtlasMeta(): AtlasMeta | null {
   if (!existsSync(atlasMetaPath)) return null;
   try {
     const parsed = JSON.parse(readFileSync(atlasMetaPath, "utf8")) as Partial<AtlasMeta>;
-    if (typeof parsed.scale === "number" && typeof parsed.encoding === "string") {
-      return { scale: parsed.scale, encoding: parsed.encoding };
+    if (
+      typeof parsed.scale === "number" &&
+      typeof parsed.encoding === "string" &&
+      Array.isArray(parsed.cellGrid)
+    ) {
+      return {
+        scale: parsed.scale,
+        encoding: parsed.encoding,
+        cellGrid: parsed.cellGrid as Array<[number, number]>,
+      };
     }
   } catch {
     /* fall through */
@@ -373,28 +425,24 @@ if (stillNeedsEncode) {
       flattenedCellPaths.push(flatPath);
     }
 
-    // Pack the (2 + N²) logical tiles into a TILE_COLS × TILE_ROWS grid
-    // (4 × 3 for N=3 → 12 slots, 11 used + 1 empty filled black) so
-    // neither output dimension exceeds the typical GPU MAX_TEXTURE_SIZE
-    // = 16384. With 1920×1080 renders the atlas is 7680×3240. Inputs
-    // are passed in order beauty/whitelight/s_0..s_8; xstack with an
-    // explicit `layout` fills row-major from the PNG top, which after
-    // the UNPACK_FLIP_Y_WEBGL upload puts beauty at v_uv.y near 1 —
-    // the shader's tileUv inverts the row direction to compensate.
+    // Pack the (2 + N²) logical tiles into a tileCols × tileRows grid
+    // derived from cellsPerSide (see src/config.ts). Inputs are passed
+    // in order beauty/whitelight/s_0..s_{N²-1}; xstack with an explicit
+    // `layout` fills row-major from the PNG top, which after the
+    // UNPACK_FLIP_Y_WEBGL upload puts beauty at v_uv.y near 1 — the
+    // shader's tileUv inverts the row direction to compensate.
     const tileCount = 2 + cellCount;
-    const TILE_COLS = 4;
-    const TILE_ROWS = 3;
     const tileDims = detectTileDimensions(exrPath("beauty", 1));
     const layoutPositions: string[] = [];
     for (let tileIndex = 0; tileIndex < tileCount; tileIndex += 1) {
-      const col = tileIndex % TILE_COLS;
-      const rowFromTop = Math.floor(tileIndex / TILE_COLS);
+      const col = tileIndex % tileCols;
+      const rowFromTop = Math.floor(tileIndex / tileCols);
       layoutPositions.push(`${col * tileDims.width}_${rowFromTop * tileDims.height}`);
     }
     const tileLayout = layoutPositions.join("|");
 
     console.log(
-      `[assets] encoding cellular still atlas (frame 1, PNG rgb24, ${tileCount} tiles in ${TILE_COLS}×${TILE_ROWS} grid)...`,
+      `[assets] encoding cellular still atlas (frame 1, PNG rgb24, ${tileCount} tiles in ${tileCols}×${tileRows} grid)...`,
     );
     const stillInputArgs: string[] = ["-i", exrPath("beauty", 1), "-i", exrPath("whitelight", 1)];
     const filterParts: string[] = [
@@ -482,4 +530,6 @@ if (stillNeedsEncode) {
 // Metadata sidecar: the runtime fetches this and feeds the scale into the
 // shader so the bounce term is multiplied back to the pre-scaled
 // scene-referred magnitude.
-writeAtlasMeta({ scale: atlasScale, encoding: atlasEncoding });
+const cellsManifest = readCellsManifest(cellsDir);
+const cellGrid = buildCellGrid(cellsManifest, cellCount);
+writeAtlasMeta({ scale: atlasScale, encoding: atlasEncoding, cellGrid });

@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { atlasImagePath, atlasPath } from "../config";
+import { atlasImagePath, atlasPath, cellsPerSide } from "../config";
 import type { PerfMetrics } from "./perfMetrics";
 import {
   downsampleFragmentShaderSource,
@@ -211,6 +211,7 @@ export function Compositor({
     const screenContrastUniformLocation = gl.getUniformLocation(program, "u_screenContrast");
     const screenBrightnessUniformLocation = gl.getUniformLocation(program, "u_screenBrightness");
     const lookupBlurRadiusUniformLocation = gl.getUniformLocation(program, "u_lookupBlurRadius");
+    const cellGridUniformLocation = gl.getUniformLocation(program, "u_cellGrid[0]");
     const downsampleSourceUniformLocation = gl.getUniformLocation(downsampleProgram, "u_source");
     const downsampleHalfPixelUniformLocation = gl.getUniformLocation(
       downsampleProgram,
@@ -418,14 +419,37 @@ export function Compositor({
     // writes the scale factor here. Until the metadata arrives we render
     // with scale = 1 (visible scene, no bounce magnitude correction).
     let atlasScale = 1;
+
+    // Per-cell screen-plane (col, row), packed as a flat Int32Array for
+    // glUniform2iv. Default is identity ordering — wrong for the real
+    // bmesh subdivide+grid_fill output, so the screen-content lookup is
+    // garbled until atlasMeta.json arrives and we overwrite it.
+    const cellCount = cellsPerSide * cellsPerSide;
+    const cellGridUniformData = new Int32Array(cellCount * 2);
+    for (let cellIndex = 0; cellIndex < cellCount; cellIndex += 1) {
+      cellGridUniformData[cellIndex * 2] = cellIndex % cellsPerSide;
+      cellGridUniformData[cellIndex * 2 + 1] = Math.floor(cellIndex / cellsPerSide);
+    }
+
     fetch("/composite/atlasMeta.json")
       .then((response) => (response.ok ? response.json() : null))
-      .then((meta: { scale?: number } | null) => {
+      .then((meta: { scale?: number; cellGrid?: Array<[number, number]> } | null) => {
         if (meta && typeof meta.scale === "number") {
           atlasScale = meta.scale;
         } else {
           console.warn(
             "[compositor] atlasMeta.json missing or invalid — bounce magnitude uncorrected",
+          );
+        }
+        if (meta && Array.isArray(meta.cellGrid) && meta.cellGrid.length === cellCount) {
+          for (let cellIndex = 0; cellIndex < cellCount; cellIndex += 1) {
+            const entry = meta.cellGrid[cellIndex];
+            cellGridUniformData[cellIndex * 2] = entry[0];
+            cellGridUniformData[cellIndex * 2 + 1] = entry[1];
+          }
+        } else {
+          console.warn(
+            "[compositor] atlasMeta.cellGrid missing or wrong length — screen-content lookup will use identity ordering",
           );
         }
       })
@@ -603,6 +627,7 @@ export function Compositor({
       gl.uniform1f(screenContrastUniformLocation, screenContrastRef.current);
       gl.uniform1f(screenBrightnessUniformLocation, screenBrightnessRef.current);
       gl.uniform1i(lookupBlurRadiusUniformLocation, lookupBlurRadiusRef.current);
+      gl.uniform2iv(cellGridUniformLocation, cellGridUniformData);
       gl.drawArrays(gl.TRIANGLES, 0, 6);
       gl.bindVertexArray(null);
 
