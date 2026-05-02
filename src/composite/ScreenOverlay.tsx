@@ -141,8 +141,8 @@ export function ScreenOverlay({
     if (detectHtmlInCanvasSupport()) {
       console.info(
         "[overlay] HTML-in-Canvas (texElementImage2D) detected. Faster path " +
-        "available — currently using the foreignObject fallback. See " +
-        "src/composite/htmlInCanvas.ts.",
+          "available — currently using the foreignObject fallback. See " +
+          "src/composite/htmlInCanvas.ts.",
       );
     }
   }, []);

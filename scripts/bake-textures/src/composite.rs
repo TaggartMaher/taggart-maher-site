@@ -18,8 +18,11 @@ use half::f16;
 use serde::Deserialize;
 
 // Sigma of the 2D Gaussian applied to (U, V, whitelight) before
-// encoding. 0 disables the blur. Tune to soften cell-boundary flicker
-// against reflection sharpness.
+// encoding, in atlas pixels at the .blend's native render resolution.
+// 0 disables the blur. Tune to soften cell-boundary flicker against
+// reflection sharpness. The coffee-steam route multiplies this by
+// STEAM_RESOLUTION_MULTIPLIER so its post-blur radius in scene units
+// is invariant under render_steam.sh's resolution boost.
 pub const POSITION_BLUR_SIGMA_PX: f32 = 4.0;
 
 #[derive(Deserialize)]
@@ -241,12 +244,51 @@ pub struct PositionFields {
     pub whitelight: Vec<f32>,
 }
 
-// Linear-quantize position fields into an 8-bit RGB PNG. R = U, G = V,
-// B = whitelight / whitelight_scale, all clamped to [0, 1] then rounded
-// to [0, 255]. Use this for the steam atlas where the EXR file size is
-// the bottleneck and 1/256 UV precision is acceptable for a soft
-// volumetric refraction. Caller must record `whitelight_scale` so the
-// runtime can multiply it back in.
+// Reads a single named float channel out of a multilayer EXR. Used
+// for the steam Combined-pass alpha (channel `steam_combined.A`),
+// which carries 1 - transmittance per camera ray when the source
+// render had film_transparent enabled.
+pub fn read_named_alpha(
+    path: &Path,
+    expected: &str,
+) -> Result<(usize, usize, Vec<f32>), Box<dyn std::error::Error>> {
+    let image = read()
+        .no_deep_data()
+        .largest_resolution_level()
+        .all_channels()
+        .first_valid_layer()
+        .all_attributes()
+        .from_file(path)?;
+
+    let layer = &image.layer_data;
+    let width = layer.size.x();
+    let height = layer.size.y();
+    for channel in layer.channel_data.list.iter() {
+        if channel.name.to_string() == expected {
+            let samples: Vec<f32> = match &channel.sample_data {
+                FlatSamples::F16(values) => {
+                    values.iter().map(|sample| sample.to_f32()).collect()
+                }
+                FlatSamples::F32(values) => values.clone(),
+                FlatSamples::U32(values) => {
+                    values.iter().map(|sample| *sample as f32).collect()
+                }
+            };
+            return Ok((width, height, samples));
+        }
+    }
+    Err(format!("missing channel {:?} in {}", expected, path.display()).into())
+}
+
+// Quantize the steam atlas into an 8-bit RGBA PNG. R = U, G = V are
+// linear-quantized (they're coordinates, not perceptual values). B is
+// whitelight / whitelight_scale sRGB-encoded so dim-but-real bounce
+// (small fraction of the atlas peak) survives 8-bit quantization
+// instead of collapsing to 0 and aliasing with "no steam present" —
+// the runtime sRGB-decodes B before applying whitelight_scale. A is
+// the per-pixel volume density (1 - transmittance) used by the
+// runtime to occlude the backdrop under standard alpha compositing;
+// linear-quantized because it's already perceptually distributed.
 pub fn write_position_png_8bit(
     path: &Path,
     width: usize,
@@ -254,6 +296,7 @@ pub fn write_position_png_8bit(
     u_channel: &[f32],
     v_channel: &[f32],
     whitelight: &[f32],
+    density: &[f32],
     whitelight_scale: f32,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let inverse_scale = if whitelight_scale > 0.0 {
@@ -261,19 +304,21 @@ pub fn write_position_png_8bit(
     } else {
         1.0
     };
-    let mut bytes = Vec::with_capacity(width * height * 3);
+    let mut bytes = Vec::with_capacity(width * height * 4);
     for pixel_index in 0..(width * height) {
         let u = u_channel[pixel_index].clamp(0.0, 1.0);
         let v = v_channel[pixel_index].clamp(0.0, 1.0);
-        let w = (whitelight[pixel_index] * inverse_scale).clamp(0.0, 1.0);
+        let w_linear = whitelight[pixel_index] * inverse_scale;
+        let a = density[pixel_index].clamp(0.0, 1.0);
         bytes.push((u * 255.0).round() as u8);
         bytes.push((v * 255.0).round() as u8);
-        bytes.push((w * 255.0).round() as u8);
+        bytes.push(linear_to_srgb_byte(w_linear));
+        bytes.push((a * 255.0).round() as u8);
     }
     let file = fs::File::create(path)?;
     let writer = std::io::BufWriter::new(file);
     let mut encoder = png::Encoder::new(writer, width as u32, height as u32);
-    encoder.set_color(png::ColorType::Rgb);
+    encoder.set_color(png::ColorType::Rgba);
     encoder.set_depth(png::BitDepth::Eight);
     encoder.set_compression(png::Compression::Best);
     let mut png_writer = encoder.write_header()?;

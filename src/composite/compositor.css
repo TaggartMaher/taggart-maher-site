@@ -11,9 +11,12 @@
 .steam-compositor-canvas {
   /* Sits above the screen overlay (z-index 10) so the steam visually
      overlays the draggable windows; pointer-events: none lets clicks
-     fall through to the windows underneath. plus-lighter adds the
-     steam contribution on top of whatever the static composite + page
-     overlay show. */
+     fall through to the windows underneath. The shader writes
+     premultiplied (scattered_light, density) and the canvas is
+     created with premultipliedAlpha: true, so the default normal blend
+     gives `final = scattered + (1 - density) * backdrop` — additive
+     for thin steam, occluding for dense steam, identity where there's
+     no steam. */
   position: fixed;
   top: 0;
   left: 0;
@@ -22,6 +25,5 @@
   display: block;
   pointer-events: none;
   z-index: 100;
-  mix-blend-mode: plus-lighter;
   background: transparent;
 }

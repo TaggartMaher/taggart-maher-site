@@ -131,11 +131,12 @@ export function SteamCompositor({
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    // premultipliedAlpha: false so the shader can write straight
-    // (Cs, αs) values that compose under CSS `mix-blend-mode:
-    // plus-lighter`. The canvas alpha must default to 1 (opaque
-    // contribution) inside the strip and 0 outside.
-    const gl = canvas.getContext("webgl2", { antialias: false, premultipliedAlpha: false });
+    // premultipliedAlpha: true so the browser composites the canvas
+    // under the standard `final = src.rgb + (1 - src.a) * backdrop`
+    // formula — matches the shader's premultiplied (scattered_light,
+    // density) output exactly. Outside the strip the shader writes
+    // (0, 0, 0, 0), which is identity under that blend.
+    const gl = canvas.getContext("webgl2", { antialias: false, premultipliedAlpha: true });
     if (!gl) {
       console.warn("[steam] WebGL2 not available — steam overlay disabled.");
       return;
@@ -298,7 +299,7 @@ export function SteamCompositor({
         if (cancelled) return;
         gl.activeTexture(gl.TEXTURE0 + STEAM_ATLAS_UNIT);
         gl.bindTexture(gl.TEXTURE_2D, atlasTexture);
-        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, atlasImage);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, atlasImage);
         atlasTextureReady = true;
         maybeStartRendering();
       },
