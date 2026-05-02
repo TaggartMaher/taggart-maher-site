@@ -9,7 +9,7 @@
   "packageManager": "pnpm@10.33.0",
   "scripts": {
     "dev": "vite",
-    "build:assets": "cargo run --quiet --release --manifest-path scripts/bake-textures/Cargo.toml",
+    "build:assets": "cargo run --quiet --release --manifest-path scripts/bake-textures/Cargo.toml -- static && cargo run --quiet --release --manifest-path scripts/bake-textures/Cargo.toml -- coffee-steam",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "test": "vitest run",

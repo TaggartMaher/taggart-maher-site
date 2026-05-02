@@ -53,32 +53,56 @@ def _read_int_env(name, default):
         return default
 
 
-CELLS_PER_SIDE = _read_int_env("CELLS_PER_SIDE", 9)
-OUTPUT_DIRECTORY = "//renders/cells/"
+SCENE_CELLS_PER_SIDE = _read_int_env("CELLS_PER_SIDE", 9)
+STEAM_CELLS_PER_SIDE = 3
 
 SCREEN_NAME = "SCREEN"
 POSITION_TEMPLATE_NAME = "SCREEN_POSITION"
-CELL_COLLECTION_NAME = "ScenePosition"
-CELL_VIEW_LAYER_NAME = "Position"
-CELL_PREFIX = "SCREEN_CELL_"
-LIGHT_GROUP_PREFIX = "screen_"
 COMPOSITOR_TREE_NAME = "cells_compositor"
 # Cycles names lightgroup sockets `Combined_<groupname>` on the
 # Render Layers node.
 RENDER_LAYER_LIGHTGROUP_PREFIX = "Combined_"
 
+SCENE_PASS = {
+    "cells_per_side": SCENE_CELLS_PER_SIDE,
+    "collection_name": "ScenePosition",
+    "view_layer_name": "Position",
+    "cell_prefix": "SCREEN_CELL_",
+    "light_group_prefix": "screen_",
+    "compositor_node_prefix": "cells_",
+    "output_directory": "//renders/cells/",
+    "manifest_filename": "cells_manifest.json",
+}
 
-def generate_screen_cells(cells_per_side):
+STEAM_PASS = {
+    "cells_per_side": STEAM_CELLS_PER_SIDE,
+    "collection_name": "SteamScenePosition",
+    "view_layer_name": "CoffeeSteam",
+    "cell_prefix": "STEAM_CELL_",
+    "light_group_prefix": "steam_",
+    "compositor_node_prefix": "steam_cells_",
+    "output_directory": "//renders/steam_cells/",
+    "manifest_filename": "steam_cells_manifest.json",
+}
+
+
+def generate_screen_cells(
+    cells_per_side,
+    collection_name,
+    view_layer_name,
+    cell_prefix,
+    light_group_prefix,
+):
     if cells_per_side < 1:
-        raise ValueError(f"CELLS_PER_SIDE must be >= 1, got {cells_per_side}")
+        raise ValueError(f"cells_per_side must be >= 1, got {cells_per_side}")
 
     screen = bpy.data.objects.get(SCREEN_NAME)
     if screen is None:
         raise RuntimeError(f"Object '{SCREEN_NAME}' not found")
 
-    cell_collection = bpy.data.collections.get(CELL_COLLECTION_NAME)
+    cell_collection = bpy.data.collections.get(collection_name)
     if cell_collection is None:
-        raise RuntimeError(f"Collection '{CELL_COLLECTION_NAME}' not found")
+        raise RuntimeError(f"Collection '{collection_name}' not found")
 
     position_template = bpy.data.objects.get(POSITION_TEMPLATE_NAME)
     cell_material = None
@@ -93,7 +117,7 @@ def generate_screen_cells(cells_per_side):
         print(f"[warn] no material on '{POSITION_TEMPLATE_NAME}' — cells will have none")
 
     for existing_object in list(bpy.data.objects):
-        if existing_object.name.startswith(CELL_PREFIX):
+        if existing_object.name.startswith(cell_prefix):
             mesh_data = existing_object.data
             bpy.data.objects.remove(existing_object, do_unlink=True)
             if mesh_data and mesh_data.users == 0:
@@ -148,7 +172,7 @@ def generate_screen_cells(cells_per_side):
                 stretched_v = (source_uv[1] - v_min) / v_span if v_span > 1e-9 else 0.0
                 new_loop[cell_uv_layer].uv = (stretched_u, stretched_v)
 
-        cell_name = f"{CELL_PREFIX}{face_index}"
+        cell_name = f"{cell_prefix}{face_index}"
         cell_mesh = bpy.data.meshes.new(f"{cell_name}_MESH")
         cell_bmesh.to_mesh(cell_mesh)
         cell_bmesh.free()
@@ -161,36 +185,44 @@ def generate_screen_cells(cells_per_side):
         if cell_material is not None:
             cell_object.data.materials.append(cell_material)
 
-        cell_object.lightgroup = f"{LIGHT_GROUP_PREFIX}{face_index}"
+        cell_object.lightgroup = f"{light_group_prefix}{face_index}"
         cell_collection.objects.link(cell_object)
 
     source_bmesh.free()
 
-    view_layer = bpy.context.scene.view_layers.get(CELL_VIEW_LAYER_NAME)
+    view_layer = bpy.context.scene.view_layers.get(view_layer_name)
     if view_layer is None:
-        print(f"[warn] view layer '{CELL_VIEW_LAYER_NAME}' not found — skipping AOVs")
+        print(f"[warn] view layer '{view_layer_name}' not found — skipping AOVs")
     else:
         stale_groups = [
             light_group for light_group in view_layer.lightgroups
-            if light_group.name.startswith(LIGHT_GROUP_PREFIX)
+            if light_group.name.startswith(light_group_prefix)
         ]
         for stale in stale_groups:
             view_layer.lightgroups.remove(stale)
 
         for face_index in range(expected_count):
-            view_layer.lightgroups.add(name=f"{LIGHT_GROUP_PREFIX}{face_index}")
+            view_layer.lightgroups.add(name=f"{light_group_prefix}{face_index}")
 
-    print(f"[ok] generated {expected_count} cells ({cells_per_side}x{cells_per_side})")
+    print(
+        f"[ok] generated {expected_count} cells ({cells_per_side}x{cells_per_side}) "
+        f"in '{collection_name}' for view layer '{view_layer_name}'"
+    )
 
 
-def setup_cell_compositor(output_directory):
+def setup_cell_compositor(
+    output_directory,
+    view_layer_name,
+    light_group_prefix,
+    compositor_node_prefix,
+):
     scene = bpy.context.scene
     if scene.render.engine != "CYCLES":
         print(f"[warn] render engine is '{scene.render.engine}' — light groups require CYCLES")
 
-    view_layer = scene.view_layers.get(CELL_VIEW_LAYER_NAME)
+    view_layer = scene.view_layers.get(view_layer_name)
     if view_layer is None:
-        print(f"[warn] view layer '{CELL_VIEW_LAYER_NAME}' not found — skipping compositor setup")
+        print(f"[warn] view layer '{view_layer_name}' not found — skipping compositor setup")
         return
 
     # Adds "Denoising Normal" and "Denoising Albedo" outputs to the
@@ -201,10 +233,10 @@ def setup_cell_compositor(output_directory):
 
     cell_groups = sorted(
         light_group.name for light_group in view_layer.lightgroups
-        if light_group.name.startswith(LIGHT_GROUP_PREFIX)
+        if light_group.name.startswith(light_group_prefix)
     )
     if not cell_groups:
-        print("[warn] no screen_* light groups found — skipping compositor setup")
+        print(f"[warn] no {light_group_prefix}* light groups found — skipping compositor setup")
         return
 
     node_tree = scene.compositing_node_group
@@ -215,15 +247,14 @@ def setup_cell_compositor(output_directory):
     else:
         print(f"[info] reusing existing compositor tree '{node_tree.name}'")
 
-    cells_node_prefix = "cells_"
     for node in list(node_tree.nodes):
-        if node.name.startswith(cells_node_prefix):
+        if node.name.startswith(compositor_node_prefix):
             node_tree.nodes.remove(node)
 
     render_layers_node = node_tree.nodes.new("CompositorNodeRLayers")
-    render_layers_node.name = "cells_renderlayers"
-    render_layers_node.label = "cells: Position view layer"
-    render_layers_node.layer = CELL_VIEW_LAYER_NAME
+    render_layers_node.name = f"{compositor_node_prefix}renderlayers"
+    render_layers_node.label = f"{compositor_node_prefix}{view_layer_name} view layer"
+    render_layers_node.layer = view_layer_name
     render_layers_node.location = (-600, -400)
 
     # Geometry doesn't change per light group, so a single Normal /
@@ -242,13 +273,13 @@ def setup_cell_compositor(output_directory):
             continue
 
         denoise_node = node_tree.nodes.new("CompositorNodeDenoise")
-        denoise_node.name = f"cells_denoise_{group_name}"
-        denoise_node.label = f"cells: denoise {group_name}"
+        denoise_node.name = f"{compositor_node_prefix}denoise_{group_name}"
+        denoise_node.label = f"{compositor_node_prefix}denoise {group_name}"
         denoise_node.location = (-300, -400 - cell_index * 60)
 
         file_output_node = node_tree.nodes.new("CompositorNodeOutputFile")
-        file_output_node.name = f"cells_output_{group_name}"
-        file_output_node.label = f"cells: {group_name}"
+        file_output_node.name = f"{compositor_node_prefix}output_{group_name}"
+        file_output_node.label = f"{compositor_node_prefix}{group_name}"
         file_output_node.location = (-100, -400 - cell_index * 60)
         file_output_node.directory = output_directory
         file_output_node.file_name = f"{group_name}_####"
@@ -278,14 +309,14 @@ def setup_cell_compositor(output_directory):
         print(f"[warn] missing render-layer sockets: {missing}")
 
 
-def write_cells_manifest(cells_per_side, output_directory):
+def write_cells_manifest(cells_per_side, output_directory, cell_prefix, manifest_filename):
     """Map face_index -> screen-plane (col, row). bmesh's
     subdivide+grid_fill doesn't emit faces row-major; the Rust bake
     binary consumes this manifest to weight Σ_K (col_K, row_K) ·
     cell_K.b correctly when assembling position.exr."""
     manifest_cells = []
     for face_index in range(cells_per_side * cells_per_side):
-        cell_object = bpy.data.objects.get(f"{CELL_PREFIX}{face_index}")
+        cell_object = bpy.data.objects.get(f"{cell_prefix}{face_index}")
         if cell_object is None:
             print(f"[warn] manifest: cell {face_index} not found — skipping")
             continue
@@ -306,13 +337,35 @@ def write_cells_manifest(cells_per_side, output_directory):
     manifest = {"cellsPerSide": cells_per_side, "cells": manifest_cells}
     resolved_directory = bpy.path.abspath(output_directory)
     os.makedirs(resolved_directory, exist_ok=True)
-    manifest_path = os.path.join(resolved_directory, "cells_manifest.json")
+    manifest_path = os.path.join(resolved_directory, manifest_filename)
     with open(manifest_path, "w", encoding="utf-8") as manifest_file:
         json.dump(manifest, manifest_file, indent=2)
         manifest_file.write("\n")
     print(f"[ok] wrote cells manifest -> {manifest_path}")
 
 
-generate_screen_cells(CELLS_PER_SIDE)
-setup_cell_compositor(OUTPUT_DIRECTORY)
-write_cells_manifest(CELLS_PER_SIDE, OUTPUT_DIRECTORY)
+def run_pass(pass_config):
+    print(f"[pass] {pass_config['view_layer_name']}")
+    generate_screen_cells(
+        pass_config["cells_per_side"],
+        pass_config["collection_name"],
+        pass_config["view_layer_name"],
+        pass_config["cell_prefix"],
+        pass_config["light_group_prefix"],
+    )
+    setup_cell_compositor(
+        pass_config["output_directory"],
+        pass_config["view_layer_name"],
+        pass_config["light_group_prefix"],
+        pass_config["compositor_node_prefix"],
+    )
+    write_cells_manifest(
+        pass_config["cells_per_side"],
+        pass_config["output_directory"],
+        pass_config["cell_prefix"],
+        pass_config["manifest_filename"],
+    )
+
+
+run_pass(SCENE_PASS)
+run_pass(STEAM_PASS)

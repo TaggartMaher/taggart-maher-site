@@ -4,6 +4,10 @@
 
 interface ImportMetaEnv {
   readonly CELLS_PER_SIDE: string;
+  readonly STEAM_CROP_MIN_X: string;
+  readonly STEAM_CROP_MAX_X: string;
+  readonly STEAM_CROP_MIN_Y: string;
+  readonly STEAM_CROP_MAX_Y: string;
 }
 
 interface ImportMeta {

@@ -41,3 +41,37 @@ export const screenRect = computeScreenRect(cameraPose, screenPlane, renderAspec
 // from public/composite/.
 export const beautyImagePath = "/composite/beauty.png";
 export const positionImagePath = "/composite/position.exr";
+export const steamAtlasPath = "/composite/steam_atlas.png";
+export const steamAtlasMetaPath = "/composite/steam_atlas_meta.json";
+export const steamCellsManifestPath = "/composite/steam_cells_manifest.json";
+
+// Number of pre-baked steam frames in the atlas. Matches the FRAME_END
+// in blender/render_steam.sh (96 frames at 24 fps = 4 s loop).
+export const steamFrameCount = 96;
+// Atlas layout: frames packed row-major into a (cols × rows) grid.
+// 16 × 6 = 96; chosen so neither axis runs into single-shot upload
+// limits on low-end GPUs (8192 max texture dim is the typical floor).
+export const steamAtlasColumns = 16;
+export const steamAtlasRows = 6;
+export const steamFps = 24;
+
+// Steam strip's normalized rectangle in full-frame coords, sourced from
+// .env. Read by render_steam.sh, the Rust bake binary, and the runtime
+// shader so all three agree on where the strip lives in the frame.
+// Exported for the env-var read path test in config.test.ts; the
+// `unknown` input matches what `import.meta.env[name]` returns when a
+// var is missing or non-string.
+export function parseEnvFloat(rawValue: unknown, fallback: number): number {
+  if (rawValue === undefined || rawValue === null || rawValue === "") {
+    return fallback;
+  }
+  const parsed = Number(rawValue);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+export const steamCrop = {
+  minX: parseEnvFloat(import.meta.env.STEAM_CROP_MIN_X, 0.375),
+  maxX: parseEnvFloat(import.meta.env.STEAM_CROP_MAX_X, 0.625),
+  minY: parseEnvFloat(import.meta.env.STEAM_CROP_MIN_Y, 0.0),
+  maxY: parseEnvFloat(import.meta.env.STEAM_CROP_MAX_Y, 1.0),
+};

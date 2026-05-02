@@ -1,0 +1,246 @@
+// Bakes the runtime steam-overlay input by compositing 96 frames'
+// worth of per-cell light-group AOVs (3×3 grid, 9 cells per frame)
+// into a single position-data atlas:
+//
+//   public/composite/steam_atlas.exr
+//     Layout: STEAM_ATLAS_COLUMNS × STEAM_ATLAS_ROWS frames packed
+//     row-major, top-left = frame 0. Each frame is a half-float RGBA
+//     position field (R = emitter U, G = emitter V, B = whitelight,
+//     A = 1) sized to the cropped strip.
+//
+//   public/composite/steam_cells_manifest.json
+//     Copy of the Blender-side manifest so the runtime can verify
+//     cellsPerSide before sampling.
+//
+// See COMPOSITE_THEORY.md for the per-pixel position-recovery math.
+
+use std::env;
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::result::Result;
+
+use crate::composite;
+
+pub const STEAM_FRAME_COUNT: usize = 96;
+pub const STEAM_ATLAS_COLUMNS: usize = 16;
+pub const STEAM_ATLAS_ROWS: usize = 6;
+
+fn cell_frame_path(steam_cells_dir: &Path, cell_index: usize, frame_number: usize) -> PathBuf {
+    steam_cells_dir.join(format!("steam_{cell_index}_{frame_number:04}.exr"))
+}
+
+fn read_optional_float_env(name: &str) -> Option<f32> {
+    env::var(name).ok().and_then(|value| value.parse::<f32>().ok())
+}
+
+pub fn run() -> Result<(), Box<dyn std::error::Error>> {
+    let blender_renders_dir = match env::var("BLENDER_RENDERS_DIR") {
+        Ok(value) if !value.is_empty() => PathBuf::from(value),
+        _ => {
+            eprintln!(
+                "[bake coffee-steam] BLENDER_RENDERS_DIR is unset — skipping. Site will run without steam."
+            );
+            return Ok(());
+        }
+    };
+
+    // Crop env vars are authoritative for render_steam.sh and the
+    // runtime shader; the baker just logs them so a mismatch shows up
+    // in build output. The per-frame dim is derived from the cell EXR
+    // itself.
+    let crop_min_x = read_optional_float_env("STEAM_CROP_MIN_X");
+    let crop_max_x = read_optional_float_env("STEAM_CROP_MAX_X");
+    let crop_min_y = read_optional_float_env("STEAM_CROP_MIN_Y");
+    let crop_max_y = read_optional_float_env("STEAM_CROP_MAX_Y");
+    if let (Some(min_x), Some(max_x), Some(min_y), Some(max_y)) =
+        (crop_min_x, crop_max_x, crop_min_y, crop_max_y)
+    {
+        eprintln!(
+            "[bake coffee-steam] strip in frame coords: x={:.3}..{:.3}, y={:.3}..{:.3}",
+            min_x, max_x, min_y, max_y
+        );
+    } else {
+        eprintln!(
+            "[bake coffee-steam] STEAM_CROP_* env vars missing or unparseable — runtime defaults will be used."
+        );
+    }
+
+    let steam_cells_dir = blender_renders_dir.join("steam_cells");
+    let manifest_path = steam_cells_dir.join("steam_cells_manifest.json");
+    if !manifest_path.is_file() {
+        eprintln!(
+            "[bake coffee-steam] {} missing — skipping.",
+            manifest_path.display()
+        );
+        return Ok(());
+    }
+    let manifest = composite::read_manifest(&manifest_path)?;
+    if manifest.cells_per_side != 3 {
+        return Err(format!(
+            "expected steam manifest cellsPerSide=3, got {}",
+            manifest.cells_per_side
+        )
+        .into());
+    }
+    let cell_grid = composite::build_cell_grid(&manifest);
+    let cell_count = manifest.cells_per_side * manifest.cells_per_side;
+
+    // Verify every per-frame cell EXR exists before doing real work.
+    // Saves the user from a half-finished atlas if a frame is missing.
+    for frame_number in 1..=STEAM_FRAME_COUNT {
+        for cell_index in 0..cell_count {
+            let path = cell_frame_path(&steam_cells_dir, cell_index, frame_number);
+            if !path.is_file() {
+                eprintln!(
+                    "[bake coffee-steam] missing cell {} frame {} at {} — skipping.",
+                    cell_index,
+                    frame_number,
+                    path.display()
+                );
+                return Ok(());
+            }
+        }
+    }
+
+    let composite_dir = composite::composite_output_dir()?;
+    let atlas_out = composite_dir.join("steam_atlas.png");
+    let atlas_meta_out = composite_dir.join("steam_atlas_meta.json");
+    let manifest_out = composite_dir.join("steam_cells_manifest.json");
+
+    // Prime atlas dims from frame 1's cell 0. All cells across all
+    // frames must match — Cycles writes consistent crop dims when the
+    // render-region settings don't change between frames.
+    let probe_path = cell_frame_path(&steam_cells_dir, 0, 1);
+    let (frame_width, frame_height, _) =
+        composite::read_named_rgb(&probe_path, ["steam_0.R", "steam_0.G", "steam_0.B"])?;
+    let atlas_width = frame_width * STEAM_ATLAS_COLUMNS;
+    let atlas_height = frame_height * STEAM_ATLAS_ROWS;
+    let atlas_pixel_count = atlas_width * atlas_height;
+    let mut atlas_position_u = vec![0.0_f32; atlas_pixel_count];
+    let mut atlas_position_v = vec![0.0_f32; atlas_pixel_count];
+    let mut atlas_whitelight = vec![0.0_f32; atlas_pixel_count];
+
+    eprintln!(
+        "[bake coffee-steam] per-frame dim {}x{}, atlas {}x{} ({} cols × {} rows × {} frames)",
+        frame_width,
+        frame_height,
+        atlas_width,
+        atlas_height,
+        STEAM_ATLAS_COLUMNS,
+        STEAM_ATLAS_ROWS,
+        STEAM_FRAME_COUNT
+    );
+
+    for frame_number in 1..=STEAM_FRAME_COUNT {
+        let mut cell_paths: Vec<PathBuf> = Vec::with_capacity(cell_count);
+        for cell_index in 0..cell_count {
+            cell_paths.push(cell_frame_path(&steam_cells_dir, cell_index, frame_number));
+        }
+        let mut fields = composite::composite_cells(
+            &cell_paths,
+            &cell_grid,
+            manifest.cells_per_side,
+            "steam",
+        )?;
+        if fields.width != frame_width || fields.height != frame_height {
+            return Err(format!(
+                "frame {} dim {}x{} != frame 1 {}x{}",
+                frame_number, fields.width, fields.height, frame_width, frame_height
+            )
+            .into());
+        }
+        if composite::POSITION_BLUR_SIGMA_PX > 0.0 {
+            composite::gaussian_blur_2d(
+                &mut fields.position_u,
+                fields.width,
+                fields.height,
+                composite::POSITION_BLUR_SIGMA_PX,
+            );
+            composite::gaussian_blur_2d(
+                &mut fields.position_v,
+                fields.width,
+                fields.height,
+                composite::POSITION_BLUR_SIGMA_PX,
+            );
+            composite::gaussian_blur_2d(
+                &mut fields.whitelight,
+                fields.width,
+                fields.height,
+                composite::POSITION_BLUR_SIGMA_PX,
+            );
+        }
+
+        let frame_index = frame_number - 1;
+        let frame_col = frame_index % STEAM_ATLAS_COLUMNS;
+        let frame_row = frame_index / STEAM_ATLAS_COLUMNS;
+        let atlas_x_origin = frame_col * frame_width;
+        let atlas_y_origin = frame_row * frame_height;
+        for row_within in 0..frame_height {
+            let atlas_row = atlas_y_origin + row_within;
+            let frame_row_offset = row_within * frame_width;
+            let atlas_row_offset = atlas_row * atlas_width + atlas_x_origin;
+            for column_within in 0..frame_width {
+                let atlas_index = atlas_row_offset + column_within;
+                let frame_index_local = frame_row_offset + column_within;
+                atlas_position_u[atlas_index] = fields.position_u[frame_index_local];
+                atlas_position_v[atlas_index] = fields.position_v[frame_index_local];
+                atlas_whitelight[atlas_index] = fields.whitelight[frame_index_local];
+            }
+        }
+
+        if frame_number % 8 == 0 || frame_number == STEAM_FRAME_COUNT {
+            eprintln!(
+                "[bake coffee-steam] composited frame {}/{}",
+                frame_number, STEAM_FRAME_COUNT
+            );
+        }
+    }
+
+    // Compute the max whitelight across the whole atlas so we can
+    // normalize the [0, max] linear range into the [0, 1] window the
+    // PNG encoder needs. Floor at 1e-6 to avoid divide-by-zero when
+    // every pixel is dark; the runtime multiplies the sampled .b back
+    // by this scale.
+    let max_whitelight = atlas_whitelight
+        .iter()
+        .fold(0.0_f32, |accumulator, value| accumulator.max(*value));
+    let whitelight_scale = max_whitelight.max(1e-6);
+
+    eprintln!(
+        "[bake coffee-steam] writing {} ({}x{}, RGB8 PNG; whitelightScale = {:.6})...",
+        atlas_out.display(),
+        atlas_width,
+        atlas_height,
+        whitelight_scale
+    );
+    composite::write_position_png_8bit(
+        &atlas_out,
+        atlas_width,
+        atlas_height,
+        &atlas_position_u,
+        &atlas_position_v,
+        &atlas_whitelight,
+        whitelight_scale,
+    )?;
+
+    let meta_json = serde_json::json!({
+        "whitelightScale": whitelight_scale,
+        "atlasColumns": STEAM_ATLAS_COLUMNS,
+        "atlasRows": STEAM_ATLAS_ROWS,
+        "frameCount": STEAM_FRAME_COUNT,
+    });
+    fs::write(&atlas_meta_out, serde_json::to_string_pretty(&meta_json)?)?;
+    eprintln!(
+        "[bake coffee-steam] wrote atlas meta -> {}",
+        atlas_meta_out.display()
+    );
+
+    eprintln!(
+        "[bake coffee-steam] copying manifest to {}",
+        manifest_out.display()
+    );
+    fs::copy(&manifest_path, &manifest_out)?;
+
+    eprintln!("[bake coffee-steam] done.");
+    Ok(())
+}

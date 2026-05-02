@@ -7,5 +7,5 @@ if [ -f .env ]; then
   source .env
   set +a
 fi
-cargo run --quiet --release --manifest-path scripts/bake-textures/Cargo.toml
+echo "[dev] skipping asset bake — run ./build.sh if public/composite/* is stale" >&2
 exec pnpm dev "$@"

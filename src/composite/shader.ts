@@ -109,6 +109,19 @@ uniform float u_screenSaturation;
 uniform float u_screenContrast;
 uniform float u_screenBrightness;
 
+// Steam atlas + sampling parameters. Rendered into the same pass so
+// the volumetric steam is part of the scene's beauty composite, not
+// just a CSS overlay on top of the portfolio. u_steamEnabled = 0
+// skips the steam contribution entirely.
+uniform sampler2D u_steamAtlas;
+uniform int u_steamEnabled;
+uniform vec4 u_steamStrip;
+uniform vec2 u_steamAtlasGridSize;
+uniform int u_steamFrameIndex;
+uniform float u_steamIntensity;
+uniform float u_steamMaxIntensity;
+uniform float u_steamWhitelightScale;
+
 // Explicit sRGB <-> linear round-trip. The beauty PNG is
 // sRGB-OETF-encoded by the bake; the screen-content canvas is
 // sRGB-encoded by definition. Both upload with
@@ -152,6 +165,41 @@ void main() {
   screenColor = max(screenColor, vec3(0.0));
 
   vec3 finalColor = beauty + screenColor * whitelight;
+
+  // Steam contribution. Same recovery math as the overlay shader:
+  // map v_uv into the strip, pick the current frame's sub-rect of
+  // the atlas, recover (emitterUv, steamWhitelight) from the
+  // 8-bit-quantized PNG, sample u_screen at the steam's emitter UV,
+  // multiply into the bounce, and soft-clamp via generalized
+  // Reinhard before adding to the scene. Outside the strip or with
+  // u_steamEnabled = 0, contributes nothing.
+  if (u_steamEnabled == 1) {
+    vec2 steamStripUv = vec2(
+      (v_uv.x - u_steamStrip.x) / (u_steamStrip.z - u_steamStrip.x),
+      (v_uv.y - u_steamStrip.y) / (u_steamStrip.w - u_steamStrip.y)
+    );
+    bool insideStrip =
+      steamStripUv.x >= 0.0 && steamStripUv.x <= 1.0 &&
+      steamStripUv.y >= 0.0 && steamStripUv.y <= 1.0;
+    if (insideStrip) {
+      float cols = u_steamAtlasGridSize.x;
+      float rows = u_steamAtlasGridSize.y;
+      float frameCol = mod(float(u_steamFrameIndex), cols);
+      float frameRow = floor(float(u_steamFrameIndex) / cols);
+      vec2 atlasUv = vec2(
+        (frameCol + steamStripUv.x) / cols,
+        (rows - frameRow - 1.0 + steamStripUv.y) / rows
+      );
+      vec3 steamPosition = texture(u_steamAtlas, atlasUv).rgb;
+      float steamWhitelight = steamPosition.b * u_steamWhitelightScale;
+      if (steamWhitelight > 0.0) {
+        vec3 steamScreen = srgbToLinear(texture(u_screen, steamPosition.rg).rgb);
+        vec3 steamContribution = steamScreen * steamWhitelight * u_steamIntensity;
+        steamContribution = steamContribution / (1.0 + steamContribution / u_steamMaxIntensity);
+        finalColor += steamContribution;
+      }
+    }
+  }
 
   // Reinhard tonemap: x / (1 + x). Compresses values > 1 with a soft
   // knee so the bright bounce rolls off into the displayable range

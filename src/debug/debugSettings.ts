@@ -45,6 +45,34 @@ export interface DebugSettings {
   screenSaturation: number;
   screenContrast: number;
   screenBrightness: number;
+  // Coffee-steam image-sequence overlay knobs. The overlay is mounted
+  // unconditionally; `coffeeSteamEnabled` only gates the contribution.
+  coffeeSteamEnabled: boolean;
+  // Multiplies steam bounce contribution before the soft clamp.
+  coffeeSteamIntensity: number;
+  // Soft ceiling for the steam contribution (per channel, in linear
+  // light). Generalized Reinhard `x / (1 + x/W)`: values well below W
+  // pass through near-linearly; values approaching or exceeding W
+  // asymptote to W. Lower values clamp brighter peaks without
+  // dimming small details.
+  coffeeSteamMaxIntensity: number;
+  // Output alpha on the steam canvas. Under mix-blend-mode:
+  // plus-lighter the source contributes `alpha × source` to the
+  // backdrop, so this is effectively an opacity multiplier — lower
+  // values let more of the underlying scene through.
+  coffeeSteamOpacity: number;
+  // Blur radius (in screen-texture pixels) applied to the screen
+  // content before it feeds the steam composite. Independent of the
+  // static compositor's screenBlurRadiusPx so the steam can run a
+  // softer / sharper reflection than the scene bounce.
+  coffeeSteamScreenBlurRadiusPx: number;
+  // Freeze playback at the last advanced frame index.
+  coffeeSteamFramePaused: boolean;
+  // Pin to a specific frame (overrides paused state). null = follow time.
+  coffeeSteamFrameOverride: number | null;
+  // Render the raw atlas into a corner overlay for debugging atlas
+  // decode / packing.
+  coffeeSteamShowAtlas: boolean;
 }
 
 export const defaultDebugSettings: DebugSettings = {
@@ -68,4 +96,12 @@ export const defaultDebugSettings: DebugSettings = {
   screenSaturation: 1,
   screenContrast: 1,
   screenBrightness: 1,
+  coffeeSteamEnabled: true,
+  coffeeSteamIntensity: 1,
+  coffeeSteamMaxIntensity: 1,
+  coffeeSteamOpacity: 1,
+  coffeeSteamScreenBlurRadiusPx: 0,
+  coffeeSteamFramePaused: false,
+  coffeeSteamFrameOverride: null,
+  coffeeSteamShowAtlas: false,
 };

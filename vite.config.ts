@@ -3,7 +3,7 @@ import react from "@vitejs/plugin-react";
 
 export default defineConfig({
   plugins: [react()],
-  envPrefix: ["VITE_", "CELLS_"],
+  envPrefix: ["VITE_", "CELLS_", "STEAM_"],
   server: {
     host: true,
   },

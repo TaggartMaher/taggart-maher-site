@@ -7,5 +7,6 @@ if [ -f .env ]; then
   source .env
   set +a
 fi
-cargo run --quiet --release --manifest-path scripts/bake-textures/Cargo.toml
+cargo run --quiet --release --manifest-path scripts/bake-textures/Cargo.toml -- static
+cargo run --quiet --release --manifest-path scripts/bake-textures/Cargo.toml -- coffee-steam
 exec pnpm build "$@"
