@@ -3,6 +3,7 @@ import { snapdom, preCache } from "@zumer/snapdom";
 import { detectHtmlInCanvasSupport } from "./htmlInCanvas";
 import { Portfolio } from "../portfolio/Portfolio";
 import {
+  rasterizerGpuFrameRecoveryMs,
   rasterizerGpuFrameThresholdMs,
   rasterizerLowPowerFps,
   rasterizerLowPowerScaleMultiplier,
@@ -256,6 +257,13 @@ export function ScreenOverlay({
       dirtyRef.current = true;
       const container = portfolioContainerRef.current;
       let lastRasterizationTimestamp = 0;
+      // Latched low-power state with hysteresis. Recomputing it as a
+      // pure function of the current gpuFrameMs would flap, because
+      // entering low-power *itself* lowers GPU load (steam off, smaller
+      // raster), which would immediately push gpuFrameMs back below the
+      // entry threshold. We keep the bit and only flip it on a wider
+      // recovery margin or when the rasterizer goes idle.
+      let inLowPowerMode = false;
       // Sliding-window timestamps (ms) of recent successful rasterizations.
       // Same shape as the compositor's displayFps measurement: count
       // entries within the last second, divide by elapsed window.
@@ -322,23 +330,37 @@ export function ScreenOverlay({
         // idle — recordRasterization alone wouldn't update it once
         // snapshots stop arriving.
         publishRasterizerFps(now);
-        // Low-power triggers only when the GPU is busy AND the rasterizer
-        // is actively producing frames. The rasterizerFps gate keeps us
-        // out of low-power on a baseline-expensive iGPU where the idle
-        // compositor alone could push gpuFrameMs over the threshold —
-        // there's no rasterizer load to shed in that case. gpuFrameMs is
-        // an EMA inside the compositor so this read is already smoothed;
-        // null means the timer-query extension isn't available and we
-        // stay at full power.
+        // Low-power evaluation, with hysteresis on gpuFrameMs and gated
+        // on rasterizer activity:
+        //   • Enter when GPU is busy (>= threshold) AND the rasterizer
+        //     is currently producing frames. The activity gate keeps us
+        //     out of low-power on a baseline-expensive iGPU where the
+        //     idle compositor alone could trip the threshold.
+        //   • Exit only when GPU clearly recovered (< recovery, well
+        //     below threshold) OR the rasterizer goes idle. The wider
+        //     band prevents the immediate re-entry that a single shared
+        //     threshold causes — entering low-power lowers GPU load,
+        //     which would otherwise instantly satisfy the exit condition
+        //     and oscillate.
+        // gpuFrameMs is an EMA inside the compositor; null means the
+        // timer-query extension isn't available and we stay at full
+        // power.
         const gpuFrameMs = perfMetricsRef.current?.gpuFrameMs ?? null;
         const rasterizerFps = perfMetricsRef.current?.rasterizerFps ?? 0;
-        const lowPower =
-          gpuFrameMs !== null && gpuFrameMs >= rasterizerGpuFrameThresholdMs && rasterizerFps > 0;
-        if (perfMetricsRef.current) {
-          perfMetricsRef.current.lowPowerMode = lowPower;
+        if (gpuFrameMs === null) {
+          inLowPowerMode = false;
+        } else if (inLowPowerMode) {
+          if (gpuFrameMs < rasterizerGpuFrameRecoveryMs || rasterizerFps <= 0) {
+            inLowPowerMode = false;
+          }
+        } else if (gpuFrameMs >= rasterizerGpuFrameThresholdMs && rasterizerFps > 0) {
+          inLowPowerMode = true;
         }
-        const targetFps = lowPower ? rasterizerLowPowerFps : rasterizerNormalFps;
-        const rasterScale = lowPower
+        if (perfMetricsRef.current) {
+          perfMetricsRef.current.lowPowerMode = inLowPowerMode;
+        }
+        const targetFps = inLowPowerMode ? rasterizerLowPowerFps : rasterizerNormalFps;
+        const rasterScale = inLowPowerMode
           ? RASTERIZER_SCALE * rasterizerLowPowerScaleMultiplier
           : RASTERIZER_SCALE;
         const frameIntervalMs = 1000 / targetFps;

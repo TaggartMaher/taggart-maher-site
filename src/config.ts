@@ -92,18 +92,24 @@ export const rasterizerNormalFps = 60;
 // ease off the rasterizer to give the compositor room.
 export const rasterizerLowPowerFps = 30;
 
-// Compositor GPU/frame (ms) at or above which the rasterizer drops to
-// `rasterizerLowPowerFps`. gpuFrameMs is itself an EMA inside the
-// compositor, so the switch is already smoothed. If the timer-query
-// extension is unavailable the metric is null and we stay at the
-// normal target.
-export const rasterizerGpuFrameThresholdMs = 0.5;
+// Compositor GPU/frame (ms) at or above which we enter low-power mode.
+// gpuFrameMs is itself an EMA inside the compositor, so the trigger is
+// already smoothed. If the timer-query extension is unavailable the
+// metric is null and we stay at full power.
+export const rasterizerGpuFrameThresholdMs = 1.25;
+
+// Once in low-power mode, gpuFrameMs has to fall below this lower
+// threshold before we exit. The gap between entry and recovery is what
+// keeps the system from flapping: low-power *itself* reduces GPU cost
+// (steam off, scaled-down raster), so a single shared threshold would
+// immediately undo the load that triggered it and oscillate.
+export const rasterizerGpuFrameRecoveryMs = 0.6;
 
 // Multiplier applied to the rasterizer's snapDOM scale when the loop is
 // in low-power mode. Halving in each axis cuts SVG raster cost ~4× at
 // the cost of a softer source for the bounce-light blur — invisible
 // after the dual-Kawase chain.
-export const rasterizerLowPowerScaleMultiplier = 0.5;
+export const rasterizerLowPowerScaleMultiplier = 0.025;
 
 export const steamCrop = {
   minX: parseEnvFloat(import.meta.env.STEAM_CROP_MIN_X, 0.375),
