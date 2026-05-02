@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { rasterizerGpuFrameThresholdMs } from "../config";
 import type { PerfMetrics } from "../composite/perfMetrics";
 import { testImages } from "../composite/testImages";
 import type { DebugSettings } from "./debugSettings";
@@ -442,6 +443,16 @@ export function DebugMenu({ settings, onChange, perfMetricsRef }: DebugMenuProps
         <div className="debug-menu-row">
           <span>Rasterizer FPS</span>
           <span>{formatFps(perf.rasterizerFps)}</span>
+        </div>
+        <div className="debug-menu-row">
+          <span>Low-power mode</span>
+          <span>
+            {perf.gpuFrameMs === null
+              ? "n/a"
+              : perf.gpuFrameMs >= rasterizerGpuFrameThresholdMs
+                ? "ON"
+                : "off"}
+          </span>
         </div>
       </section>
 
