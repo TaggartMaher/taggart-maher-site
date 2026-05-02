@@ -19,20 +19,20 @@ export const renderAspect = 16 / 9;
 // lies in its local XY plane with `widthMeters` along local X and
 // `heightMeters` along local Y, centered at its position.
 export const cameraPose: CameraPose = {
-  positionMeters: [0.459539, 0.036977, 0.48932],
-  rotationEulerDegXYZ: [76.7184, 1.23951, -267.355],
-  horizontalFovDeg: 80.8044,
+  positionMeters: [0.797173, 0.059577, 0.635183],
+  rotationEulerDegXYZ: [68.3183, 1.23915, -265.556],
+  horizontalFovDeg: 56.3,
 };
 
 export const screenPlane: ScreenPlane = {
-  positionMeters: [-0.16833, 0.04207, 0.36069],
+  positionMeters: [-0.17683, 0.044526, 0.36793],
   // Plane stands vertical with its normal pointing world +X. With
   // Blender's XYZ-Euler (Rz · Ry · Rx) this is [90, 0, 90]: local +Z
   // → world +X, local +X → world +Y (width), local +Y → world +Z
-  // (height).
+  // (height).  
   rotationEulerDegXYZ: [90, 0, 90],
-  widthMeters: 0.569,
-  heightMeters: 0.35,
+  widthMeters: 0.558,
+  heightMeters: 0.334,
 };
 
 export const screenRect = computeScreenRect(cameraPose, screenPlane, renderAspect);

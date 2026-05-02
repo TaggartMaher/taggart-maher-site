@@ -6,7 +6,7 @@
   "engines": {
     "node": ">=22"
   },
-  "packageManager": "pnpm@10.33.0",
+  "packageManager": "pnpm@10.33.2",
   "scripts": {
     "dev": "vite",
     "build:assets": "cargo run --quiet --release --manifest-path scripts/bake-textures/Cargo.toml -- static && cargo run --quiet --release --manifest-path scripts/bake-textures/Cargo.toml -- coffee-steam",
