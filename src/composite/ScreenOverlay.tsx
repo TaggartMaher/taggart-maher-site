@@ -3,13 +3,13 @@ import { snapdom, preCache } from "@zumer/snapdom";
 import { detectHtmlInCanvasSupport } from "./htmlInCanvas";
 import { Portfolio } from "../portfolio/Portfolio";
 import {
+  rasterizerGpuFrameThresholdMs,
   rasterizerLowPowerFps,
   rasterizerNormalFps,
-  rasterizerThrottleStepDownFraction,
-  rasterizerThrottleStepUpFraction,
   screenDimensions,
   screenProjectedCorners,
 } from "../config";
+import type { PerfMetrics } from "./perfMetrics";
 import {
   computeCssMatrix3d,
   inverseProjectViewportPoint,
@@ -55,6 +55,11 @@ interface ScreenOverlayProps {
   // Canvas the compositor will sample as the screen-content texture. We
   // assign it on mount so the parent's ref points at our offscreen canvas.
   textureCanvasRef: React.RefObject<HTMLCanvasElement | null>;
+  // Read-only view into the compositor's per-frame metrics. The Portfolio
+  // rasterization loop reads `gpuFrameMs` to decide between normal and
+  // low-power target FPS; null means the metric is unavailable and we
+  // stay at the normal target.
+  perfMetricsRef: React.RefObject<PerfMetrics>;
 }
 
 // Rasterize an HTMLElement onto the supplied texture canvas via snapDOM.
@@ -85,6 +90,7 @@ export function ScreenOverlay({
   settings,
   onSettingsChange,
   textureCanvasRef,
+  perfMetricsRef,
 }: ScreenOverlayProps) {
   const portfolioContainerRef = useRef<HTMLDivElement | null>(null);
   const overlayRef = useRef<HTMLDivElement | null>(null);
@@ -236,8 +242,6 @@ export function ScreenOverlay({
       dirtyRef.current = true;
       const container = portfolioContainerRef.current;
       let lastRasterizationTimestamp = 0;
-      let rasterizationDurationEmaMs = 0;
-      let currentTargetFps = rasterizerNormalFps;
       function markDirty(): void {
         dirtyRef.current = true;
       }
@@ -270,33 +274,24 @@ export function ScreenOverlay({
       function tick(): void {
         if (cancelled) return;
         const now = performance.now();
-        const frameIntervalMs = 1000 / currentTargetFps;
+        // Pick the target FPS off the compositor's GPU/frame metric. The
+        // metric itself is an EMA inside the compositor, so this read is
+        // already smoothed; null means the timer-query extension isn't
+        // available and we stay at the normal target.
+        const gpuFrameMs = perfMetricsRef.current?.gpuFrameMs ?? null;
+        const targetFps =
+          gpuFrameMs !== null && gpuFrameMs >= rasterizerGpuFrameThresholdMs
+            ? rasterizerLowPowerFps
+            : rasterizerNormalFps;
+        const frameIntervalMs = 1000 / targetFps;
         if (dirtyRef.current && now - lastRasterizationTimestamp >= frameIntervalMs) {
           // Clear the flag BEFORE awaiting the snapshot so any change
           // observed during the in-flight capture re-marks dirty and is
           // picked up on the next tick.
           dirtyRef.current = false;
           lastRasterizationTimestamp = now;
-          const rasterizationStart = performance.now();
           void snapshotPortfolio().then(() => {
             if (cancelled) return;
-            const sampleMs = performance.now() - rasterizationStart;
-            rasterizationDurationEmaMs =
-              rasterizationDurationEmaMs === 0
-                ? sampleMs
-                : rasterizationDurationEmaMs * 0.9 + sampleMs * 0.1;
-            const normalBudgetMs = 1000 / rasterizerNormalFps;
-            if (
-              currentTargetFps === rasterizerNormalFps &&
-              rasterizationDurationEmaMs > normalBudgetMs * rasterizerThrottleStepDownFraction
-            ) {
-              currentTargetFps = rasterizerLowPowerFps;
-            } else if (
-              currentTargetFps === rasterizerLowPowerFps &&
-              rasterizationDurationEmaMs < normalBudgetMs * rasterizerThrottleStepUpFraction
-            ) {
-              currentTargetFps = rasterizerNormalFps;
-            }
             paintSquare();
             rafId = requestAnimationFrame(tick);
           });
@@ -329,6 +324,7 @@ export function ScreenOverlay({
     settings.imageBackgroundUrl,
     settings.colorBackgroundEnabled,
     settings.colorBackgroundColor,
+    perfMetricsRef,
   ]);
 
   // The square overlay sits outside the Portfolio container, so the

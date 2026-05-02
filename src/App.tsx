@@ -36,6 +36,7 @@ export function App() {
         settings={debugSettings}
         onSettingsChange={setDebugSettings}
         textureCanvasRef={screenSourceCanvasRef}
+        perfMetricsRef={perfMetricsRef}
       />
       <SteamCompositor
         screenSourceCanvasRef={screenSourceCanvasRef}
