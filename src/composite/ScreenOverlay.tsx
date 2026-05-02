@@ -40,6 +40,13 @@ const OVERLAY_NATURAL_HEIGHT = Math.round(
   (OVERLAY_NATURAL_WIDTH * screenDimensions.heightMeters) / screenDimensions.widthMeters,
 );
 
+// snapDOM rasterizes the live element at element-natural size by default
+// (1600px wide). The texture canvas is smaller, so we'd then drawImage-
+// downscale. Asking snapDOM for a smaller raster directly cuts the SVG
+// decode cost roughly quadratically, with no perceptual loss because the
+// bounce light is dual-Kawase-blurred downstream.
+const RASTERIZER_SCALE = TEXTURE_WIDTH / OVERLAY_NATURAL_WIDTH;
+
 const SQUARE_FRACTION = 1 / 5;
 
 interface ScreenOverlayProps {
@@ -65,6 +72,7 @@ async function renderHtmlElementToCanvas(
     embedFonts: true,
     cache: "full",
     backgroundColor: "#fafafa",
+    scale: RASTERIZER_SCALE,
   });
   const sourceCanvas = await result.toCanvas();
   const context = canvas.getContext("2d");
