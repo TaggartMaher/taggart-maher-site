@@ -8,6 +8,9 @@ importers:
 
   .:
     dependencies:
+      '@zumer/snapdom':
+        specifier: ^2.9.0
+        version: 2.9.0
       react:
         specifier: ^19.0.0
         version: 19.2.5
@@ -865,6 +868,9 @@ packages:
 
   '@vitest/utils@3.2.4':
     resolution: {integrity: sha512-fB2V0JFrQSMsCo9HiSq3Ezpdv4iYaXRG1Sx8edX3MwxfyNn83mKiGzOcH+Fkxt4MHxr3y42fQi1oeAInqgX2QA==}
+
+  '@zumer/snapdom@2.9.0':
+    resolution: {integrity: sha512-ksDM5gXQmu1isBof/YumD2HeIHf4ImTMfba9xE4JyDbARhcZCWHFdjW8oZV3hSKdWpQILEspNq5MrAfwEfzpIw==}
 
   acorn-jsx@5.3.2:
     resolution: {integrity: sha512-rq9s+JNhf0IChjtDXxllJ7g41oZk5SlXtp0LHwyA5cejwn7vKmKp4pPri6YEePv2PU65sAsegbXtIinmDFDXgQ==}
@@ -2647,6 +2653,8 @@ snapshots:
       '@vitest/pretty-format': 3.2.4
       loupe: 3.2.1
       tinyrainbow: 2.0.0
+
+  '@zumer/snapdom@2.9.0': {}
 
   acorn-jsx@5.3.2(acorn@8.16.0):
     dependencies:
