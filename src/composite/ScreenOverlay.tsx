@@ -25,7 +25,7 @@ import "./screenOverlay.css";
 // sized roughly to the on-screen pixel width of the screen plane at
 // common viewport sizes. Height keeps the screen plane's true world
 // aspect so the bounce-light texture maps without distortion.
-const TEXTURE_WIDTH = 1280;
+const TEXTURE_WIDTH = 1920 / 2;
 const TEXTURE_HEIGHT = Math.round(
   (TEXTURE_WIDTH * screenDimensions.heightMeters) / screenDimensions.widthMeters,
 );

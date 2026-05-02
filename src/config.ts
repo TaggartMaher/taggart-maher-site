@@ -87,13 +87,13 @@ export function parseEnvFloat(rawValue: unknown, fallback: number): number {
 // if the display refresh rate is higher (e.g. 144 Hz). 30 is a good
 // default — the bounce light is heavily blurred and does not need
 // per-display-refresh updates.
-export const rasterizerNormalFps = 30;
+export const rasterizerNormalFps = 60;
 
 // Floor the rasterizer falls back to when recent rasterization cost
 // shows we cannot sustain `rasterizerNormalFps` within budget. Below
 // this we degrade visibly; this is the slowest the rasterizer is
 // allowed to run.
-export const rasterizerLowPowerFps = 10;
+export const rasterizerLowPowerFps = 24;
 
 // Fraction of the per-frame time budget that rasterization is allowed
 // to occupy before we drop to low-power mode. 0.6 means: if recent
