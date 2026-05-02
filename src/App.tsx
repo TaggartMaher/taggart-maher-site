@@ -31,11 +31,6 @@ export function App() {
         screenSaturation={debugSettings.screenSaturation}
         screenContrast={debugSettings.screenContrast}
         screenBrightness={debugSettings.screenBrightness}
-        steamEnabled={debugSettings.coffeeSteamEnabled}
-        steamIntensity={debugSettings.coffeeSteamIntensity}
-        steamMaxIntensity={debugSettings.coffeeSteamMaxIntensity}
-        framePaused={debugSettings.coffeeSteamFramePaused}
-        frameOverride={debugSettings.coffeeSteamFrameOverride}
         perfMetricsRef={perfMetricsRef}
       />
       <ScreenOverlay
