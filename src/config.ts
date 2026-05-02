@@ -24,9 +24,9 @@ export const renderAspect = 16 / 9;
 // Camera and screen-plane values baked from the .blend. Units are meters
 // and XYZ-Euler degrees (Blender defaults).
 export const cameraPose: CameraPose = {
-  positionMeters: [0.797173, 0.059577, 0.635183],
-  rotationEulerDegXYZ: [68.3183, 1.23915, -265.556],
-  horizontalFovDeg: 56.3,
+  positionMeters: [0.390658, 0.031391, 0.493628],
+  rotationEulerDegXYZ: [69.0683, 1.23842, -267.058],
+  horizontalFovDeg: 88.6044,
 };
 
 // Four world-space vertices of the screen quad, in image-space order

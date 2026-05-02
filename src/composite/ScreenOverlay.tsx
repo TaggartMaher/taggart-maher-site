@@ -15,7 +15,7 @@ import "./screenOverlay.css";
 // Width chosen to be roughly the on-screen pixel width of the screen plane
 // at common viewport sizes; height keeps the screen plane's true world
 // aspect so the bounce-light texture maps without distortion.
-const TEXTURE_WIDTH = 4 * 1024;
+const TEXTURE_WIDTH = 1920;
 const TEXTURE_HEIGHT = Math.round(
   (TEXTURE_WIDTH * screenDimensions.heightMeters) / screenDimensions.widthMeters,
 );
@@ -141,8 +141,8 @@ export function ScreenOverlay({
     if (detectHtmlInCanvasSupport()) {
       console.info(
         "[overlay] HTML-in-Canvas (texElementImage2D) detected. Faster path " +
-          "available — currently using the foreignObject fallback. See " +
-          "src/composite/htmlInCanvas.ts.",
+        "available — currently using the foreignObject fallback. See " +
+        "src/composite/htmlInCanvas.ts.",
       );
     }
   }, []);
