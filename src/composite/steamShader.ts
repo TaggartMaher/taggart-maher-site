@@ -2,11 +2,13 @@
 // expects:
 //
 //   u_steamAtlas — 8-bit RGB PNG atlas of N×M frames packed row-major,
-//                  top-left = frame 0. Each pixel encodes
-//                  (emitter U, emitter V, whitelight / whitelightScale)
-//                  with all three channels in [0, 1]. UNPACK_FLIP_Y on
-//                  the HTMLImageElement upload lands the source's top
-//                  scanline at texture v = 1.
+//                  top-left = frame 0. R, G are linear-quantized
+//                  (emitter U, emitter V) in [0, 1]. B is
+//                  whitelight / whitelightScale sRGB-encoded so dim
+//                  bounce keeps 8-bit precision instead of collapsing
+//                  to 0; the shader sRGB-decodes B before scaling.
+//                  UNPACK_FLIP_Y on the HTMLImageElement upload lands
+//                  the source's top scanline at texture v = 1.
 //   u_screen     — sRGB-encoded screen-content texture, same source as
 //                  the static compositor's u_screen.
 //   u_whitelightScale — the max whitelight value across the atlas at
@@ -83,9 +85,12 @@ void main() {
     if (v_uv.x > 0.75 && v_uv.y > 0.75) {
       vec2 atlasCornerUv = (v_uv - vec2(0.75)) / 0.25;
       vec3 atlasColor = texture(u_steamAtlas, atlasCornerUv).rgb;
-      // Atlas channels are linear (R = U, G = V, B = whitelight). Show
-      // them as-is, just sRGB-encoded for the canvas.
-      fragColor = vec4(linearToSrgb(atlasColor), 1.0);
+      // Show the raw stored byte values 1:1 in the canvas. R, G hold
+      // linear UVs and B is sRGB-encoded whitelight; we don't try to
+      // visualize them in any unified colorspace — just display what
+      // the atlas pixels actually contain so we can spot decoding or
+      // packing bugs.
+      fragColor = vec4(atlasColor, 1.0);
     } else {
       fragColor = vec4(0.0);
     }
@@ -116,7 +121,11 @@ void main() {
 
   vec3 position = texture(u_steamAtlas, atlasUv).rgb;
   vec2 emitterUv = position.rg;
-  float whitelight = position.b * u_whitelightScale;
+  // B is sRGB-encoded at bake time to preserve precision in the dim
+  // tail of the whitelight range. Decode before scaling so the linear
+  // bounce magnitude matches what the baker measured.
+  float whitelightLinear = srgbToLinear(vec3(position.b)).r;
+  float whitelight = whitelightLinear * u_whitelightScale;
 
   if (whitelight <= 0.0) {
     fragColor = vec4(0.0);

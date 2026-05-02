@@ -241,12 +241,15 @@ pub struct PositionFields {
     pub whitelight: Vec<f32>,
 }
 
-// Linear-quantize position fields into an 8-bit RGB PNG. R = U, G = V,
-// B = whitelight / whitelight_scale, all clamped to [0, 1] then rounded
-// to [0, 255]. Use this for the steam atlas where the EXR file size is
-// the bottleneck and 1/256 UV precision is acceptable for a soft
-// volumetric refraction. Caller must record `whitelight_scale` so the
-// runtime can multiply it back in.
+// Quantize position fields into an 8-bit RGB PNG. R = U, G = V are
+// linear-quantized (they're coordinates, not perceptual values). B is
+// whitelight / whitelight_scale sRGB-encoded so dim-but-real bounce
+// (small fraction of the atlas peak) survives 8-bit quantization
+// instead of collapsing to 0 and aliasing with "no steam present" —
+// the runtime sRGB-decodes B before applying whitelight_scale. Use
+// this for the steam atlas where the EXR file size is the bottleneck
+// and 1/256 UV precision is acceptable for a soft volumetric
+// refraction.
 pub fn write_position_png_8bit(
     path: &Path,
     width: usize,
@@ -265,10 +268,10 @@ pub fn write_position_png_8bit(
     for pixel_index in 0..(width * height) {
         let u = u_channel[pixel_index].clamp(0.0, 1.0);
         let v = v_channel[pixel_index].clamp(0.0, 1.0);
-        let w = (whitelight[pixel_index] * inverse_scale).clamp(0.0, 1.0);
+        let w_linear = whitelight[pixel_index] * inverse_scale;
         bytes.push((u * 255.0).round() as u8);
         bytes.push((v * 255.0).round() as u8);
-        bytes.push((w * 255.0).round() as u8);
+        bytes.push(linear_to_srgb_byte(w_linear));
     }
     let file = fs::File::create(path)?;
     let writer = std::io::BufWriter::new(file);
