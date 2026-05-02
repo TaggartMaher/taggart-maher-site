@@ -443,10 +443,14 @@ export function DebugMenu({ settings, onChange, perfMetricsRef }: DebugMenuProps
           <span>Rasterizer FPS</span>
           <span>{formatFps(perf.rasterizerFps)}</span>
         </div>
-        <div className="debug-menu-row">
-          <span>Low-power mode</span>
-          <span>{perf.gpuFrameMs === null ? "n/a" : perf.lowPowerMode ? "ON" : "off"}</span>
-        </div>
+        <label className="debug-menu-row">
+          <input
+            type="checkbox"
+            checked={settings.ecoMode}
+            onChange={(event) => onChange({ ...settings, ecoMode: event.target.checked })}
+          />
+          <span>Eco mode</span>
+        </label>
       </section>
 
       <footer className="debug-menu-footer">` to toggle</footer>

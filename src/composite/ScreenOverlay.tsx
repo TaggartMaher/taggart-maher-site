@@ -3,11 +3,8 @@ import { snapdom, preCache } from "@zumer/snapdom";
 import { detectHtmlInCanvasSupport } from "./htmlInCanvas";
 import { Portfolio } from "../portfolio/Portfolio";
 import {
-  rasterizerGpuFrameRecoveryMs,
-  rasterizerGpuFrameThresholdMs,
-  rasterizerLowPowerFps,
-  rasterizerLowPowerScaleMultiplier,
-  rasterizerNormalFps,
+  ecoModeRasterizerScaleMultiplier,
+  rasterizerFps,
   screenDimensions,
   screenProjectedCorners,
 } from "../config";
@@ -61,10 +58,9 @@ interface ScreenOverlayProps {
   // texture canvas. The compositors compare their last-uploaded value
   // and skip texImage2D when nothing has changed since.
   textureRevisionRef: React.RefObject<number>;
-  // Read-only view into the compositor's per-frame metrics. The Portfolio
-  // rasterization loop reads `gpuFrameMs` to decide between normal and
-  // low-power target FPS; null means the metric is unavailable and we
-  // stay at the normal target.
+  // Live perf-metrics ref. The rasterization loop publishes its
+  // sliding-window FPS into `rasterizerFps` so the debug menu can show
+  // it; nothing in this component reads from it.
   perfMetricsRef: React.RefObject<PerfMetrics>;
 }
 
@@ -257,13 +253,6 @@ export function ScreenOverlay({
       dirtyRef.current = true;
       const container = portfolioContainerRef.current;
       let lastRasterizationTimestamp = 0;
-      // Latched low-power state with hysteresis. Recomputing it as a
-      // pure function of the current gpuFrameMs would flap, because
-      // entering low-power *itself* lowers GPU load (steam off, smaller
-      // raster), which would immediately push gpuFrameMs back below the
-      // entry threshold. We keep the bit and only flip it on a wider
-      // recovery margin or when the rasterizer goes idle.
-      let inLowPowerMode = false;
       // Sliding-window timestamps (ms) of recent successful rasterizations.
       // Same shape as the compositor's displayFps measurement: count
       // entries within the last second, divide by elapsed window.
@@ -330,40 +319,14 @@ export function ScreenOverlay({
         // idle — recordRasterization alone wouldn't update it once
         // snapshots stop arriving.
         publishRasterizerFps(now);
-        // Low-power evaluation, with hysteresis on gpuFrameMs and gated
-        // on rasterizer activity:
-        //   • Enter when GPU is busy (>= threshold) AND the rasterizer
-        //     is currently producing frames. The activity gate keeps us
-        //     out of low-power on a baseline-expensive iGPU where the
-        //     idle compositor alone could trip the threshold.
-        //   • Exit only when GPU clearly recovered (< recovery, well
-        //     below threshold) OR the rasterizer goes idle. The wider
-        //     band prevents the immediate re-entry that a single shared
-        //     threshold causes — entering low-power lowers GPU load,
-        //     which would otherwise instantly satisfy the exit condition
-        //     and oscillate.
-        // gpuFrameMs is an EMA inside the compositor; null means the
-        // timer-query extension isn't available and we stay at full
-        // power.
-        const gpuFrameMs = perfMetricsRef.current?.gpuFrameMs ?? null;
-        const rasterizerFps = perfMetricsRef.current?.rasterizerFps ?? 0;
-        if (gpuFrameMs === null) {
-          inLowPowerMode = false;
-        } else if (inLowPowerMode) {
-          if (gpuFrameMs < rasterizerGpuFrameRecoveryMs || rasterizerFps <= 0) {
-            inLowPowerMode = false;
-          }
-        } else if (gpuFrameMs >= rasterizerGpuFrameThresholdMs && rasterizerFps > 0) {
-          inLowPowerMode = true;
-        }
-        if (perfMetricsRef.current) {
-          perfMetricsRef.current.lowPowerMode = inLowPowerMode;
-        }
-        const targetFps = inLowPowerMode ? rasterizerLowPowerFps : rasterizerNormalFps;
-        const rasterScale = inLowPowerMode
-          ? RASTERIZER_SCALE * rasterizerLowPowerScaleMultiplier
+        // Eco mode is a user-controlled debug toggle; when on we render
+        // snapDOM at a smaller scale (cheaper SVG raster). The cap on
+        // raster fps stays the same in either mode — eco only affects
+        // resolution.
+        const rasterScale = settingsRef.current.ecoMode
+          ? RASTERIZER_SCALE * ecoModeRasterizerScaleMultiplier
           : RASTERIZER_SCALE;
-        const frameIntervalMs = 1000 / targetFps;
+        const frameIntervalMs = 1000 / rasterizerFps;
         if (dirtyRef.current && now - lastRasterizationTimestamp >= frameIntervalMs) {
           // Clear the flag BEFORE awaiting the snapshot so any change
           // observed during the in-flight capture re-marks dirty and is

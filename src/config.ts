@@ -82,34 +82,18 @@ export function parseEnvFloat(rawValue: unknown, fallback: number): number {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
-// Target FPS for the screen-content rasterizer when the compositor
-// reports GPU headroom. The rAF loop never re-rasterizes faster than
-// this, even if the display refresh rate is higher (e.g. 144 Hz).
-export const rasterizerNormalFps = 60;
+// Target FPS cap for the screen-content rasterizer. The rAF loop never
+// re-rasterizes faster than this, even if the display refresh rate is
+// higher (e.g. 144 Hz). The bounce light is heavily blurred so the
+// reader can't tell the rasterizer isn't running per-display-refresh.
+export const rasterizerFps = 60;
 
-// Fallback target FPS used when the compositor's GPU/frame metric is
-// at or above `rasterizerGpuFrameThresholdMs` — the GPU is busy, so we
-// ease off the rasterizer to give the compositor room.
-export const rasterizerLowPowerFps = 30;
-
-// Compositor GPU/frame (ms) at or above which we enter low-power mode.
-// gpuFrameMs is itself an EMA inside the compositor, so the trigger is
-// already smoothed. If the timer-query extension is unavailable the
-// metric is null and we stay at full power.
-export const rasterizerGpuFrameThresholdMs = 1.25;
-
-// Once in low-power mode, gpuFrameMs has to fall below this lower
-// threshold before we exit. The gap between entry and recovery is what
-// keeps the system from flapping: low-power *itself* reduces GPU cost
-// (steam off, scaled-down raster), so a single shared threshold would
-// immediately undo the load that triggered it and oscillate.
-export const rasterizerGpuFrameRecoveryMs = 0.6;
-
-// Multiplier applied to the rasterizer's snapDOM scale when the loop is
-// in low-power mode. Halving in each axis cuts SVG raster cost ~4× at
-// the cost of a softer source for the bounce-light blur — invisible
-// after the dual-Kawase chain.
-export const rasterizerLowPowerScaleMultiplier = 0.025;
+// Multiplier applied to the rasterizer's snapDOM scale when the
+// user-toggled `ecoMode` debug setting is on. Smaller multipliers cut
+// SVG raster cost roughly quadratically at the cost of a softer source
+// for the bounce-light blur — usually invisible after the dual-Kawase
+// chain on the way to the emitter.
+export const ecoModeRasterizerScaleMultiplier = 0.025;
 
 export const steamCrop = {
   minX: parseEnvFloat(import.meta.env.STEAM_CROP_MIN_X, 0.375),
