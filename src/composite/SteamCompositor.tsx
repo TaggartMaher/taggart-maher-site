@@ -1,6 +1,5 @@
 import { useEffect, useRef } from "react";
 import {
-  rasterizerGpuFrameThresholdMs,
   steamAtlasColumns,
   steamAtlasMetaPath,
   steamAtlasPath,
@@ -411,12 +410,12 @@ export function SteamCompositor({
       if (!enabledRef.current) {
         return;
       }
-      // Treat the steam pass as disabled whenever the compositor's
-      // GPU/frame is at or above the low-power threshold. gpuFrameMs is
-      // already EMA-smoothed inside the compositor, so this read won't
-      // flicker on a single spike.
-      const gpuFrameMs = perfMetricsRef.current?.gpuFrameMs ?? null;
-      if (gpuFrameMs !== null && gpuFrameMs >= rasterizerGpuFrameThresholdMs) {
+      // Treat the steam pass as disabled whenever the rasterizer loop
+      // has flagged low-power mode (GPU busy AND rasterizer active).
+      // ScreenOverlay publishes this — it has the dirty-flag context
+      // we need to know whether the busy GPU is actually our load to
+      // shed or just baseline cost.
+      if (perfMetricsRef.current?.lowPowerMode) {
         return;
       }
 

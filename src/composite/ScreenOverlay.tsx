@@ -322,12 +322,21 @@ export function ScreenOverlay({
         // idle — recordRasterization alone wouldn't update it once
         // snapshots stop arriving.
         publishRasterizerFps(now);
-        // Pick the target FPS off the compositor's GPU/frame metric. The
-        // metric itself is an EMA inside the compositor, so this read is
-        // already smoothed; null means the timer-query extension isn't
-        // available and we stay at the normal target.
+        // Low-power triggers only when the GPU is busy AND the rasterizer
+        // is actively producing frames. The rasterizerFps gate keeps us
+        // out of low-power on a baseline-expensive iGPU where the idle
+        // compositor alone could push gpuFrameMs over the threshold —
+        // there's no rasterizer load to shed in that case. gpuFrameMs is
+        // an EMA inside the compositor so this read is already smoothed;
+        // null means the timer-query extension isn't available and we
+        // stay at full power.
         const gpuFrameMs = perfMetricsRef.current?.gpuFrameMs ?? null;
-        const lowPower = gpuFrameMs !== null && gpuFrameMs >= rasterizerGpuFrameThresholdMs;
+        const rasterizerFps = perfMetricsRef.current?.rasterizerFps ?? 0;
+        const lowPower =
+          gpuFrameMs !== null && gpuFrameMs >= rasterizerGpuFrameThresholdMs && rasterizerFps > 0;
+        if (perfMetricsRef.current) {
+          perfMetricsRef.current.lowPowerMode = lowPower;
+        }
         const targetFps = lowPower ? rasterizerLowPowerFps : rasterizerNormalFps;
         const rasterScale = lowPower
           ? RASTERIZER_SCALE * rasterizerLowPowerScaleMultiplier

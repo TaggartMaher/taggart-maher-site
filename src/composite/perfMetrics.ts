@@ -15,8 +15,20 @@ export interface PerfMetrics {
   // when the rasterizer has nothing new to publish. Updated by
   // ScreenOverlay.
   rasterizerFps: number;
+  // True when the GPU is busy AND the rasterizer is actively producing
+  // frames. Computed and published by ScreenOverlay; SteamCompositor
+  // reads it to suspend the steam pass during interaction. The
+  // rasterizerFps > 0 gate keeps us out of low-power on a baseline-
+  // expensive iGPU where idle gpuFrameMs alone could trip the threshold.
+  lowPowerMode: boolean;
 }
 
 export function makeEmptyPerfMetrics(): PerfMetrics {
-  return { displayFps: 0, cpuFrameMs: 0, gpuFrameMs: null, rasterizerFps: 0 };
+  return {
+    displayFps: 0,
+    cpuFrameMs: 0,
+    gpuFrameMs: null,
+    rasterizerFps: 0,
+    lowPowerMode: false,
+  };
 }
