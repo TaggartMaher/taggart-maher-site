@@ -60,13 +60,13 @@ export const steamCellsManifestPath = "/composite/steam_cells_manifest.json";
 
 // Number of pre-baked steam frames in the atlas. Matches the FRAME_END
 // in blender/render_steam.sh (96 frames at 24 fps = 4 s loop).
-export const steamFrameCount = 96;
+export const steamFrameCount = 24;
 // Atlas layout: frames packed row-major into a (cols × rows) grid.
 // 16 × 6 = 96; chosen so neither axis runs into single-shot upload
 // limits on low-end GPUs (8192 max texture dim is the typical floor).
 export const steamAtlasColumns = 16;
 export const steamAtlasRows = 6;
-export const steamFps = 24;
+export const steamFps = 12;
 
 // Steam strip's normalized rectangle in full-frame coords, sourced from
 // .env. Read by render_steam.sh, the Rust bake binary, and the runtime

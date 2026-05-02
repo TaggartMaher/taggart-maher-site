@@ -21,13 +21,23 @@ use std::result::Result;
 
 use crate::composite;
 
-pub const STEAM_FRAME_COUNT: usize = 96;
+pub const STEAM_FRAME_COUNT: usize = 24;
 pub const STEAM_ATLAS_COLUMNS: usize = 16;
 pub const STEAM_ATLAS_ROWS: usize = 6;
 
 fn cell_frame_path(steam_cells_dir: &Path, cell_index: usize, frame_number: usize) -> PathBuf {
     steam_cells_dir.join(format!("steam_{cell_index}_{frame_number:04}.exr"))
 }
+
+fn combined_frame_path(steam_cells_dir: &Path, frame_number: usize) -> PathBuf {
+    steam_cells_dir.join(format!("steam_combined_{frame_number:04}.exr"))
+}
+
+// EXR channel name written by the CoffeeSteam compositor's combined
+// File Output node — its `file_output_items` entry is named
+// "steam_combined", so each channel inside lands as
+// `steam_combined.{R,G,B,A}`.
+const COMBINED_ALPHA_CHANNEL: &str = "steam_combined.A";
 
 fn read_optional_float_env(name: &str) -> Option<f32> {
     env::var(name).ok().and_then(|value| value.parse::<f32>().ok())
@@ -64,6 +74,23 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             "[bake coffee-steam] STEAM_CROP_* env vars missing or unparseable — runtime defaults will be used."
         );
     }
+
+    // POSITION_BLUR_SIGMA_PX is tuned in atlas pixels at the .blend's
+    // native render resolution. render_steam.sh multiplies render_x /
+    // render_y by STEAM_RESOLUTION_MULTIPLIER to sharpen the steam
+    // pass without rescaling the overlay; if we kept sigma fixed, the
+    // scene-space softness would shrink by the same factor and
+    // cell-boundary flicker could come back. Scale sigma by the same
+    // multiplier so the post-blur radius in scene units stays
+    // identical regardless of multiplier setting. Default to 4.0 —
+    // matches render_steam.sh's default.
+    let steam_resolution_multiplier =
+        read_optional_float_env("STEAM_RESOLUTION_MULTIPLIER").unwrap_or(4.0);
+    let steam_blur_sigma_px = composite::POSITION_BLUR_SIGMA_PX * steam_resolution_multiplier;
+    eprintln!(
+        "[bake coffee-steam] resolution multiplier {:.3} → blur sigma {:.3} atlas px",
+        steam_resolution_multiplier, steam_blur_sigma_px
+    );
 
     let steam_cells_dir = blender_renders_dir.join("steam_cells");
     let manifest_path = steam_cells_dir.join("steam_cells_manifest.json");
@@ -102,6 +129,34 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
+    // The Combined-pass alpha (volume density) is optional: if the
+    // file is missing for every frame, the atlas's alpha channel falls
+    // back to 0 and the runtime composites purely additively (same
+    // visual result as before this change). If it's missing only for
+    // *some* frames, that's a render misconfiguration — fail fast.
+    let combined_alpha_present = combined_frame_path(&steam_cells_dir, 1).is_file();
+    if combined_alpha_present {
+        for frame_number in 1..=STEAM_FRAME_COUNT {
+            let path = combined_frame_path(&steam_cells_dir, frame_number);
+            if !path.is_file() {
+                return Err(format!(
+                    "combined-alpha frame 1 exists but frame {} missing at {} — \
+                     re-render the CoffeeSteam pass for all frames or remove frame 1",
+                    frame_number,
+                    path.display()
+                )
+                .into());
+            }
+        }
+        eprintln!(
+            "[bake coffee-steam] combined-alpha present — atlas A channel will carry density."
+        );
+    } else {
+        eprintln!(
+            "[bake coffee-steam] no steam_combined_####.exr — atlas A = 0 (purely additive runtime)."
+        );
+    }
+
     let composite_dir = composite::composite_output_dir()?;
     let atlas_out = composite_dir.join("steam_atlas.png");
     let atlas_meta_out = composite_dir.join("steam_atlas_meta.json");
@@ -119,6 +174,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
     let mut atlas_position_u = vec![0.0_f32; atlas_pixel_count];
     let mut atlas_position_v = vec![0.0_f32; atlas_pixel_count];
     let mut atlas_whitelight = vec![0.0_f32; atlas_pixel_count];
+    let mut atlas_density = vec![0.0_f32; atlas_pixel_count];
 
     eprintln!(
         "[bake coffee-steam] per-frame dim {}x{}, atlas {}x{} ({} cols × {} rows × {} frames)",
@@ -149,24 +205,53 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             )
             .into());
         }
-        if composite::POSITION_BLUR_SIGMA_PX > 0.0 {
+        // Read the Combined-pass alpha for this frame (if present)
+        // and verify dims match the cell EXRs. The Combined pass and
+        // the per-cell passes share the same render border + render
+        // resolution, so their crop dims agree by construction.
+        let mut density_field = if combined_alpha_present {
+            let combined_path = combined_frame_path(&steam_cells_dir, frame_number);
+            let (combined_width, combined_height, samples) =
+                composite::read_named_alpha(&combined_path, COMBINED_ALPHA_CHANNEL)?;
+            if combined_width != fields.width || combined_height != fields.height {
+                return Err(format!(
+                    "combined frame {} dim {}x{} != cell {}x{}",
+                    frame_number, combined_width, combined_height, fields.width, fields.height
+                )
+                .into());
+            }
+            samples
+        } else {
+            vec![0.0_f32; fields.width * fields.height]
+        };
+
+        if steam_blur_sigma_px > 0.0 {
             composite::gaussian_blur_2d(
                 &mut fields.position_u,
                 fields.width,
                 fields.height,
-                composite::POSITION_BLUR_SIGMA_PX,
+                steam_blur_sigma_px,
             );
             composite::gaussian_blur_2d(
                 &mut fields.position_v,
                 fields.width,
                 fields.height,
-                composite::POSITION_BLUR_SIGMA_PX,
+                steam_blur_sigma_px,
             );
             composite::gaussian_blur_2d(
                 &mut fields.whitelight,
                 fields.width,
                 fields.height,
-                composite::POSITION_BLUR_SIGMA_PX,
+                steam_blur_sigma_px,
+            );
+            // Match the position fields' softness so the steam edge
+            // doesn't look harder in the density channel than in the
+            // scattered-light channel.
+            composite::gaussian_blur_2d(
+                &mut density_field,
+                fields.width,
+                fields.height,
+                steam_blur_sigma_px,
             );
         }
 
@@ -185,6 +270,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
                 atlas_position_u[atlas_index] = fields.position_u[frame_index_local];
                 atlas_position_v[atlas_index] = fields.position_v[frame_index_local];
                 atlas_whitelight[atlas_index] = fields.whitelight[frame_index_local];
+                atlas_density[atlas_index] = density_field[frame_index_local];
             }
         }
 
@@ -207,7 +293,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
     let whitelight_scale = max_whitelight.max(1e-6);
 
     eprintln!(
-        "[bake coffee-steam] writing {} ({}x{}, RGB8 PNG; whitelightScale = {:.6})...",
+        "[bake coffee-steam] writing {} ({}x{}, RGBA8 PNG; whitelightScale = {:.6})...",
         atlas_out.display(),
         atlas_width,
         atlas_height,
@@ -220,6 +306,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
         &atlas_position_u,
         &atlas_position_v,
         &atlas_whitelight,
+        &atlas_density,
         whitelight_scale,
     )?;
 

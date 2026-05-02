@@ -72,6 +72,7 @@ SCENE_PASS = {
     "compositor_node_prefix": "cells_",
     "output_directory": "//renders/cells/",
     "manifest_filename": "cells_manifest.json",
+    "combined_alpha_basename": None,
 }
 
 STEAM_PASS = {
@@ -83,6 +84,11 @@ STEAM_PASS = {
     "compositor_node_prefix": "steam_cells_",
     "output_directory": "//renders/steam_cells/",
     "manifest_filename": "steam_cells_manifest.json",
+    # Volume density (1 - transmittance) for the camera ray. Only the
+    # Combined output of the view layer carries this — light-group
+    # sockets are RGB-only intensity. The bake reads this file's alpha
+    # alongside the per-cell EXRs to drive backdrop occlusion.
+    "combined_alpha_basename": "steam_combined",
 }
 
 
@@ -215,6 +221,7 @@ def setup_cell_compositor(
     view_layer_name,
     light_group_prefix,
     compositor_node_prefix,
+    combined_alpha_basename,
 ):
     scene = bpy.context.scene
     if scene.render.engine != "CYCLES":
@@ -304,6 +311,49 @@ def setup_cell_compositor(
         )
         connected += 1
 
+    if combined_alpha_basename is not None:
+        # The Render Layers node's "Image" socket is the Combined RGBA
+        # output of the view layer. With film_transparent = True and a
+        # holdout, alpha = 1 - transmittance for the camera ray —
+        # exactly the volume density the runtime needs to occlude the
+        # backdrop. Light-group sockets can't carry this.
+        combined_socket = render_layers_node.outputs.get("Image")
+        if combined_socket is None:
+            print("[warn] render layers node has no 'Image' socket — skipping combined-alpha output")
+        else:
+            # Same denoise treatment as the per-cell light groups so
+            # the alpha (volume density) and the RGB scatter come out
+            # of OIDN clean — important at moderate sample counts
+            # where the camera-ray transmittance integral is noisy.
+            combined_denoise_node = node_tree.nodes.new("CompositorNodeDenoise")
+            combined_denoise_node.name = f"{compositor_node_prefix}denoise_combined"
+            combined_denoise_node.label = f"{compositor_node_prefix}denoise {combined_alpha_basename}"
+            combined_denoise_node.location = (-300, -300)
+
+            combined_output_node = node_tree.nodes.new("CompositorNodeOutputFile")
+            combined_output_node.name = f"{compositor_node_prefix}output_combined"
+            combined_output_node.label = f"{compositor_node_prefix}{combined_alpha_basename}"
+            combined_output_node.location = (-100, -300)
+            combined_output_node.directory = output_directory
+            combined_output_node.file_name = f"{combined_alpha_basename}_####"
+            combined_output_node.format.file_format = "OPEN_EXR_MULTILAYER"
+            combined_output_node.format.color_mode = "RGBA"
+            combined_output_node.format.color_depth = "32"
+            combined_output_node.format.exr_codec = "ZIP"
+            combined_output_node.file_output_items.new(
+                socket_type="RGBA", name=combined_alpha_basename
+            )
+            node_tree.links.new(combined_socket, combined_denoise_node.inputs["Image"])
+            if denoise_normal_socket is not None:
+                node_tree.links.new(denoise_normal_socket, combined_denoise_node.inputs["Normal"])
+            if denoise_albedo_socket is not None:
+                node_tree.links.new(denoise_albedo_socket, combined_denoise_node.inputs["Albedo"])
+            node_tree.links.new(
+                combined_denoise_node.outputs["Image"],
+                combined_output_node.inputs[combined_alpha_basename],
+            )
+            connected += 1
+
     print(f"[ok] compositor wired: {connected} File Output nodes -> {output_directory}")
     if missing:
         print(f"[warn] missing render-layer sockets: {missing}")
@@ -358,6 +408,7 @@ def run_pass(pass_config):
         pass_config["view_layer_name"],
         pass_config["light_group_prefix"],
         pass_config["compositor_node_prefix"],
+        pass_config["combined_alpha_basename"],
     )
     write_cells_manifest(
         pass_config["cells_per_side"],
