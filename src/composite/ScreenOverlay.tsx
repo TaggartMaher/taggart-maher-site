@@ -2,7 +2,14 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { snapdom, preCache } from "@zumer/snapdom";
 import { detectHtmlInCanvasSupport } from "./htmlInCanvas";
 import { Portfolio } from "../portfolio/Portfolio";
-import { screenDimensions, screenProjectedCorners } from "../config";
+import {
+  rasterizerLowPowerFps,
+  rasterizerNormalFps,
+  rasterizerThrottleStepDownFraction,
+  rasterizerThrottleStepUpFraction,
+  screenDimensions,
+  screenProjectedCorners,
+} from "../config";
 import {
   computeCssMatrix3d,
   inverseProjectViewportPoint,
@@ -219,6 +226,9 @@ export function ScreenOverlay({
       // is effectively free.
       dirtyRef.current = true;
       const container = portfolioContainerRef.current;
+      let lastRasterizationTimestamp = 0;
+      let rasterizationDurationEmaMs = 0;
+      let currentTargetFps = rasterizerNormalFps;
       function markDirty(): void {
         dirtyRef.current = true;
       }
@@ -250,13 +260,34 @@ export function ScreenOverlay({
 
       function tick(): void {
         if (cancelled) return;
-        if (dirtyRef.current) {
+        const now = performance.now();
+        const frameIntervalMs = 1000 / currentTargetFps;
+        if (dirtyRef.current && now - lastRasterizationTimestamp >= frameIntervalMs) {
           // Clear the flag BEFORE awaiting the snapshot so any change
           // observed during the in-flight capture re-marks dirty and is
           // picked up on the next tick.
           dirtyRef.current = false;
+          lastRasterizationTimestamp = now;
+          const rasterizationStart = performance.now();
           void snapshotPortfolio().then(() => {
             if (cancelled) return;
+            const sampleMs = performance.now() - rasterizationStart;
+            rasterizationDurationEmaMs =
+              rasterizationDurationEmaMs === 0
+                ? sampleMs
+                : rasterizationDurationEmaMs * 0.9 + sampleMs * 0.1;
+            const normalBudgetMs = 1000 / rasterizerNormalFps;
+            if (
+              currentTargetFps === rasterizerNormalFps &&
+              rasterizationDurationEmaMs > normalBudgetMs * rasterizerThrottleStepDownFraction
+            ) {
+              currentTargetFps = rasterizerLowPowerFps;
+            } else if (
+              currentTargetFps === rasterizerLowPowerFps &&
+              rasterizationDurationEmaMs < normalBudgetMs * rasterizerThrottleStepUpFraction
+            ) {
+              currentTargetFps = rasterizerNormalFps;
+            }
             paintSquare();
             rafId = requestAnimationFrame(tick);
           });

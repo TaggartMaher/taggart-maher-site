@@ -82,6 +82,27 @@ export function parseEnvFloat(rawValue: unknown, fallback: number): number {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+// Target FPS for the screen-content rasterizer when the machine can
+// sustain it. The rAF loop never re-rasterizes faster than this, even
+// if the display refresh rate is higher (e.g. 144 Hz). 30 is a good
+// default — the bounce light is heavily blurred and does not need
+// per-display-refresh updates.
+export const rasterizerNormalFps = 30;
+
+// Floor the rasterizer falls back to when recent rasterization cost
+// shows we cannot sustain `rasterizerNormalFps` within budget. Below
+// this we degrade visibly; this is the slowest the rasterizer is
+// allowed to run.
+export const rasterizerLowPowerFps = 10;
+
+// Fraction of the per-frame time budget that rasterization is allowed
+// to occupy before we drop to low-power mode. 0.6 means: if recent
+// rasterizations average more than 60% of (1000 / normalFps), step
+// down. Hysteresis: only step back up when the EMA falls under
+// `rasterizerThrottleStepUpFraction` of the same budget.
+export const rasterizerThrottleStepDownFraction = 0.6;
+export const rasterizerThrottleStepUpFraction = 0.4;
+
 export const steamCrop = {
   minX: parseEnvFloat(import.meta.env.STEAM_CROP_MIN_X, 0.375),
   maxX: parseEnvFloat(import.meta.env.STEAM_CROP_MAX_X, 0.625),
