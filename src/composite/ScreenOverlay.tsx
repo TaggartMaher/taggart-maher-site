@@ -55,6 +55,10 @@ interface ScreenOverlayProps {
   // Canvas the compositor will sample as the screen-content texture. We
   // assign it on mount so the parent's ref points at our offscreen canvas.
   textureCanvasRef: React.RefObject<HTMLCanvasElement | null>;
+  // Monotonic revision counter we increment every time we paint the
+  // texture canvas. The compositors compare their last-uploaded value
+  // and skip texImage2D when nothing has changed since.
+  textureRevisionRef: React.RefObject<number>;
   // Read-only view into the compositor's per-frame metrics. The Portfolio
   // rasterization loop reads `gpuFrameMs` to decide between normal and
   // low-power target FPS; null means the metric is unavailable and we
@@ -90,6 +94,7 @@ export function ScreenOverlay({
   settings,
   onSettingsChange,
   textureCanvasRef,
+  textureRevisionRef,
   perfMetricsRef,
 }: ScreenOverlayProps) {
   const portfolioContainerRef = useRef<HTMLDivElement | null>(null);
@@ -125,12 +130,13 @@ export function ScreenOverlay({
     }
     internalCanvasRef.current = canvas;
     textureCanvasRef.current = canvas;
+    textureRevisionRef.current = (textureRevisionRef.current ?? 0) + 1;
     return () => {
       if (textureCanvasRef.current === canvas) {
         textureCanvasRef.current = null;
       }
     };
-  }, [textureCanvasRef]);
+  }, [textureCanvasRef, textureRevisionRef]);
 
   // One-time log if the user has Chrome's HTML-in-Canvas flag enabled —
   // the compositor would benefit from `texElementImage2D`, but wiring
@@ -165,6 +171,10 @@ export function ScreenOverlay({
     let cancelled = false;
     let rafId = 0;
     let rasterizing = false;
+
+    function bumpRevision(): void {
+      textureRevisionRef.current = (textureRevisionRef.current ?? 0) + 1;
+    }
 
     function paintSquare(): void {
       if (!canvas || !context) return;
@@ -227,11 +237,13 @@ export function ScreenOverlay({
           context.fillRect(0, 0, canvas.width, canvas.height);
         }
         paintSquare();
+        bumpRevision();
       })();
     } else if (settings.colorBackgroundEnabled) {
       context.fillStyle = settings.colorBackgroundColor;
       context.fillRect(0, 0, canvas.width, canvas.height);
       paintSquare();
+      bumpRevision();
     } else {
       // Portfolio mode — drive a self-paced rAF loop. The next frame
       // schedules only after the previous snapshot resolves, so we
@@ -293,6 +305,7 @@ export function ScreenOverlay({
           void snapshotPortfolio().then(() => {
             if (cancelled) return;
             paintSquare();
+            bumpRevision();
             rafId = requestAnimationFrame(tick);
           });
         } else {
@@ -325,6 +338,7 @@ export function ScreenOverlay({
     settings.colorBackgroundEnabled,
     settings.colorBackgroundColor,
     perfMetricsRef,
+    textureRevisionRef,
   ]);
 
   // The square overlay sits outside the Portfolio container, so the

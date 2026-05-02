@@ -38,6 +38,11 @@ interface SteamAtlasMeta {
 interface CompositorProps {
   // Canvas the compositor uploads as `u_screen` each frame.
   screenSourceCanvasRef: React.RefObject<HTMLCanvasElement | null>;
+  // Monotonic revision bumped by ScreenOverlay every time the canvas is
+  // repainted. We skip the texImage2D upload when our last-uploaded
+  // value still matches — pixel-identical frames don't need to retravel
+  // the PCIe bus.
+  screenSourceRevisionRef: React.RefObject<number>;
   // Effective blur radius (in screen-texture pixels) applied to the
   // screen-content image before compositing. 0 disables the blur.
   screenBlurRadiusPx: number;
@@ -116,6 +121,7 @@ export function Compositor({
   framePaused,
   frameOverride,
   perfMetricsRef,
+  screenSourceRevisionRef,
 }: CompositorProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const beautyImageRef = useRef<HTMLImageElement | null>(null);
@@ -336,6 +342,9 @@ export function Compositor({
     const exponentialAverageAlpha = 0.1;
     let cpuFrameMsAverage = 0;
     let gpuFrameMsAverage: number | null = timerQueryExtension ? 0 : null;
+    // Last screen-source revision we uploaded via texImage2D. -1 forces
+    // an upload on the first frame.
+    let lastUploadedScreenSourceRevision = -1;
     const recentFrameTimestamps: number[] = [];
     const recentFrameTimestampsCapacity = 60;
 
@@ -511,7 +520,11 @@ export function Compositor({
       if (!screenSource) return;
       gl.activeTexture(gl.TEXTURE0 + SCREEN_UNIT);
       gl.bindTexture(gl.TEXTURE_2D, screenTexture);
-      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, screenSource);
+      const screenSourceRevision = screenSourceRevisionRef.current ?? 0;
+      if (screenSourceRevision !== lastUploadedScreenSourceRevision) {
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, screenSource);
+        lastUploadedScreenSourceRevision = screenSourceRevision;
+      }
 
       // Run the dual-Kawase blur chain if radius > 0. The composite
       // below samples the final blurred result from BLUR_OUTPUT_UNIT
@@ -673,7 +686,7 @@ export function Compositor({
       gl.deleteProgram(upsampleProgram);
       for (const query of pendingTimerQueries) gl.deleteQuery(query);
     };
-  }, [screenSourceCanvasRef, perfMetricsRef]);
+  }, [screenSourceCanvasRef, perfMetricsRef, screenSourceRevisionRef]);
 
   return (
     <>

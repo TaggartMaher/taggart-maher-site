@@ -27,6 +27,9 @@ interface SteamCompositorProps {
   // shader multiplies its bounce by this canvas's color, so the two
   // composites stay visually consistent.
   screenSourceCanvasRef: React.RefObject<HTMLCanvasElement | null>;
+  // Monotonic revision bumped by ScreenOverlay every time the canvas is
+  // repainted. Skip the texImage2D upload when our last value matches.
+  screenSourceRevisionRef: React.RefObject<number>;
   enabled: boolean;
   // Multiplies the bounce contribution before the soft clamp.
   intensity: number;
@@ -97,6 +100,7 @@ function linkProgram(
 
 export function SteamCompositor({
   screenSourceCanvasRef,
+  screenSourceRevisionRef,
   enabled,
   intensity,
   maxIntensity,
@@ -368,6 +372,9 @@ export function SteamCompositor({
     }
 
     let lastFrameIndex = 0;
+    // Last screen-source revision uploaded via texImage2D; -1 forces an
+    // upload on the first frame.
+    let lastUploadedScreenSourceRevision = -1;
     function currentFrameIndex(nowMs: number): number {
       const override = frameOverrideRef.current;
       if (override !== null && Number.isFinite(override)) {
@@ -400,7 +407,11 @@ export function SteamCompositor({
       if (!screenSource) return;
       gl.activeTexture(gl.TEXTURE0 + STEAM_SCREEN_UNIT);
       gl.bindTexture(gl.TEXTURE_2D, screenTexture);
-      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, screenSource);
+      const screenSourceRevision = screenSourceRevisionRef.current ?? 0;
+      if (screenSourceRevision !== lastUploadedScreenSourceRevision) {
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, screenSource);
+        lastUploadedScreenSourceRevision = screenSourceRevision;
+      }
 
       // Optional dual-Kawase blur chain. When the radius is > 0 we
       // run downsamples then upsamples, leaving the final blurred
@@ -527,7 +538,7 @@ export function SteamCompositor({
       // Reference manifestSeen so the linter doesn't strip the fetch path.
       void manifestSeen;
     };
-  }, [screenSourceCanvasRef]);
+  }, [screenSourceCanvasRef, screenSourceRevisionRef]);
 
   return <canvas ref={canvasRef} className="steam-compositor-canvas" />;
 }
