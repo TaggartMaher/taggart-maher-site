@@ -1,7 +1,14 @@
 // Single source of truth shared between the Blender side and the web
 // side. See COMPOSITE_THEORY.md for the math these constants drive.
 
-import { computeScreenRect, type CameraPose, type ScreenPlane } from "./screenRect";
+import {
+  computeProjectedCorners,
+  computeScreenDimensions,
+  computeScreenNormal,
+  computeScreenRect,
+  type CameraPose,
+  type ScreenPlane,
+} from "./screenRect";
 
 // Side length of the N×N screen-cell grid. Sourced from .env
 // (CELLS_PER_SIDE), exposed to the client by Vite's envPrefix. Must
@@ -14,28 +21,34 @@ export const cellsPerSide =
 // Render output aspect (width / height).
 export const renderAspect = 16 / 9;
 
-// Camera and screen-plane values baked from the .blend. Units are
-// meters and XYZ-Euler degrees (Blender defaults). The screen plane
-// lies in its local XY plane with `widthMeters` along local X and
-// `heightMeters` along local Y, centered at its position.
+// Camera and screen-plane values baked from the .blend. Units are meters
+// and XYZ-Euler degrees (Blender defaults).
 export const cameraPose: CameraPose = {
-  positionMeters: [0.797173, 0.059577, 0.635183],
-  rotationEulerDegXYZ: [68.3183, 1.23915, -265.556],
-  horizontalFovDeg: 56.3,
+  positionMeters: [0.390658, 0.031391, 0.493628],
+  rotationEulerDegXYZ: [69.0683, 1.23842, -267.058],
+  horizontalFovDeg: 88.6044,
 };
 
+// Four world-space vertices of the screen quad, in image-space order
+// (TL, TR, BR, BL — top/bottom/left/right as the camera sees them).
+// The runtime derives width/height/normal/projection from these alone.
 export const screenPlane: ScreenPlane = {
-  positionMeters: [-0.17683, 0.044526, 0.36793],
-  // Plane stands vertical with its normal pointing world +X. With
-  // Blender's XYZ-Euler (Rz · Ry · Rx) this is [90, 0, 90]: local +Z
-  // → world +X, local +X → world +Y (width), local +Y → world +Z
-  // (height).  
-  rotationEulerDegXYZ: [90, 0, 90],
-  widthMeters: 0.558,
-  heightMeters: 0.334,
+  vertices: [
+    [-0.17681, -0.231728, 0.538728],
+    [-0.187874, 0.323686, 0.529611],
+    [-0.17338, 0.318155, 0.200048],
+    [-0.162316, -0.237259, 0.209165],
+  ],
 };
 
 export const screenRect = computeScreenRect(cameraPose, screenPlane, renderAspect);
+export const screenProjectedCorners = computeProjectedCorners(
+  cameraPose,
+  screenPlane,
+  renderAspect,
+);
+export const screenNormal = computeScreenNormal(screenPlane, cameraPose.positionMeters);
+export const screenDimensions = computeScreenDimensions(screenPlane);
 
 // Built by the Rust bake binary (scripts/bake-textures/) and served
 // from public/composite/.
