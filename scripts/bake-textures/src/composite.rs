@@ -20,7 +20,7 @@ use serde::Deserialize;
 // Sigma of the 2D Gaussian applied to (U, V, whitelight) before
 // encoding. 0 disables the blur. Tune to soften cell-boundary flicker
 // against reflection sharpness.
-pub const POSITION_BLUR_SIGMA_PX: f32 = 2.0;
+pub const POSITION_BLUR_SIGMA_PX: f32 = 4.0;
 
 #[derive(Deserialize)]
 pub struct CellsManifest {
