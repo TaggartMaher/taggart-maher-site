@@ -32,7 +32,7 @@ fi
 : "${STEAM_CROP_MIN_Y:?STEAM_CROP_MIN_Y must be set in .env}"
 : "${STEAM_CROP_MAX_Y:?STEAM_CROP_MAX_Y must be set in .env}"
 
-CROP_EXPR="r = bpy.context.scene.render; r.use_border = True; r.use_crop_to_border = True; r.border_min_x = ${STEAM_CROP_MIN_X}; r.border_min_y = ${STEAM_CROP_MIN_Y}; r.border_max_x = ${STEAM_CROP_MAX_X}; r.border_max_y = ${STEAM_CROP_MAX_Y}"
+CROP_EXPR="r = bpy.context.scene.render; r.use_border = True; r.use_crop_to_border = True; r.border_min_x = ${STEAM_CROP_MIN_X}; r.border_min_y = ${STEAM_CROP_MIN_Y}; r.border_max_x = ${STEAM_CROP_MAX_X}; r.border_max_y = ${STEAM_CROP_MAX_Y}; r.filepath = '//renders/steam_beauty/position-'"
 
 blender "$BLEND_FILE" -b \
     --python-expr "import bpy; [setattr(vl, 'use', vl.name == '${VIEW_LAYER}') for vl in bpy.context.scene.view_layers]; ${CROP_EXPR}" \

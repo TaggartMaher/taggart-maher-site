@@ -76,7 +76,7 @@ SCENE_PASS = {
 
 STEAM_PASS = {
     "cells_per_side": STEAM_CELLS_PER_SIDE,
-    "collection_name": "SteamScreenPosition",
+    "collection_name": "SteamScenePosition",
     "view_layer_name": "CoffeeSteam",
     "cell_prefix": "STEAM_CELL_",
     "light_group_prefix": "steam_",
