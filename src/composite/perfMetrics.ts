@@ -9,8 +9,19 @@ export interface PerfMetrics {
   displayFps: number;
   cpuFrameMs: number;
   gpuFrameMs: number | null;
+  // How often the screen-content rasterizer (snapDOM) is producing
+  // updated frames into the screen-content canvas. Decoupled from
+  // displayFps — the compositor still draws at the display rate even
+  // when the rasterizer has nothing new to publish. Updated by
+  // ScreenOverlay.
+  rasterizerFps: number;
 }
 
 export function makeEmptyPerfMetrics(): PerfMetrics {
-  return { displayFps: 0, cpuFrameMs: 0, gpuFrameMs: null };
+  return {
+    displayFps: 0,
+    cpuFrameMs: 0,
+    gpuFrameMs: null,
+    rasterizerFps: 0,
+  };
 }

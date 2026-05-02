@@ -1,15 +1,5 @@
 import { useEffect, useRef } from "react";
-import {
-  beautyImagePath,
-  positionImagePath,
-  steamAtlasColumns,
-  steamAtlasMetaPath,
-  steamAtlasPath,
-  steamAtlasRows,
-  steamCrop,
-  steamFps,
-  steamFrameCount,
-} from "../config";
+import { beautyImagePath, positionImagePath } from "../config";
 import { decodeExr } from "./decodeExr";
 import type { PerfMetrics } from "./perfMetrics";
 import {
@@ -29,15 +19,15 @@ const SCREEN_UNIT = 1;
 const POSITION_UNIT = 2;
 const BLUR_OUTPUT_UNIT = 3;
 const BLUR_READ_UNIT = 4;
-const STEAM_ATLAS_UNIT = 5;
-
-interface SteamAtlasMeta {
-  whitelightScale?: number;
-}
 
 interface CompositorProps {
   // Canvas the compositor uploads as `u_screen` each frame.
   screenSourceCanvasRef: React.RefObject<HTMLCanvasElement | null>;
+  // Monotonic revision bumped by ScreenOverlay every time the canvas is
+  // repainted. We skip the texImage2D upload when our last-uploaded
+  // value still matches — pixel-identical frames don't need to retravel
+  // the PCIe bus.
+  screenSourceRevisionRef: React.RefObject<number>;
   // Effective blur radius (in screen-texture pixels) applied to the
   // screen-content image before compositing. 0 disables the blur.
   screenBlurRadiusPx: number;
@@ -54,16 +44,6 @@ interface CompositorProps {
   screenSaturation: number;
   screenContrast: number;
   screenBrightness: number;
-  // Steam contribution rendered into the same pass so the volumetric
-  // refraction is part of the scene composite, not just an overlay
-  // on top of the portfolio HTML. The overlay canvas
-  // (SteamCompositor) still composites on top of the page overlay
-  // for the portion of the strip that the portfolio occludes.
-  steamEnabled: boolean;
-  steamIntensity: number;
-  steamMaxIntensity: number;
-  framePaused: boolean;
-  frameOverride: number | null;
   // Optional sink for per-frame performance metrics, mutated each frame.
   perfMetricsRef?: React.RefObject<PerfMetrics>;
 }
@@ -110,12 +90,8 @@ export function Compositor({
   screenSaturation,
   screenContrast,
   screenBrightness,
-  steamEnabled,
-  steamIntensity,
-  steamMaxIntensity,
-  framePaused,
-  frameOverride,
   perfMetricsRef,
+  screenSourceRevisionRef,
 }: CompositorProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const beautyImageRef = useRef<HTMLImageElement | null>(null);
@@ -137,16 +113,6 @@ export function Compositor({
   screenContrastRef.current = screenContrast;
   const screenBrightnessRef = useRef(screenBrightness);
   screenBrightnessRef.current = screenBrightness;
-  const steamEnabledRef = useRef(steamEnabled);
-  steamEnabledRef.current = steamEnabled;
-  const steamIntensityRef = useRef(steamIntensity);
-  steamIntensityRef.current = steamIntensity;
-  const steamMaxIntensityRef = useRef(steamMaxIntensity);
-  steamMaxIntensityRef.current = steamMaxIntensity;
-  const framePausedRef = useRef(framePaused);
-  framePausedRef.current = framePaused;
-  const frameOverrideRef = useRef<number | null>(frameOverride);
-  frameOverrideRef.current = frameOverride;
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -189,20 +155,6 @@ export function Compositor({
     const screenSaturationUniformLocation = gl.getUniformLocation(program, "u_screenSaturation");
     const screenContrastUniformLocation = gl.getUniformLocation(program, "u_screenContrast");
     const screenBrightnessUniformLocation = gl.getUniformLocation(program, "u_screenBrightness");
-    const steamAtlasUniformLocation = gl.getUniformLocation(program, "u_steamAtlas");
-    const steamEnabledUniformLocation = gl.getUniformLocation(program, "u_steamEnabled");
-    const steamStripUniformLocation = gl.getUniformLocation(program, "u_steamStrip");
-    const steamAtlasGridSizeUniformLocation = gl.getUniformLocation(
-      program,
-      "u_steamAtlasGridSize",
-    );
-    const steamFrameIndexUniformLocation = gl.getUniformLocation(program, "u_steamFrameIndex");
-    const steamIntensityUniformLocation = gl.getUniformLocation(program, "u_steamIntensity");
-    const steamMaxIntensityUniformLocation = gl.getUniformLocation(program, "u_steamMaxIntensity");
-    const steamWhitelightScaleUniformLocation = gl.getUniformLocation(
-      program,
-      "u_steamWhitelightScale",
-    );
     const downsampleSourceUniformLocation = gl.getUniformLocation(downsampleProgram, "u_source");
     const downsampleHalfPixelUniformLocation = gl.getUniformLocation(
       downsampleProgram,
@@ -242,7 +194,6 @@ export function Compositor({
     const beautyTexture = makeTexture(BEAUTY_UNIT);
     const screenTexture = makeTexture(SCREEN_UNIT);
     const positionTexture = makeTexture(POSITION_UNIT);
-    const steamAtlasTexture = makeTexture(STEAM_ATLAS_UNIT);
 
     // Dual-Kawase blur chain. Level 0 is the screen source's native
     // resolution; each level halves both axes. Downsample writes
@@ -321,21 +272,15 @@ export function Compositor({
     let animationFrameHandle: number | null = null;
     let beautyImageUploaded = false;
     let positionTextureReady = false;
-    // Steam atlas + meta load asynchronously; the steam contribution
-    // is gated behind both being ready (the static composite still
-    // renders without them, just with no steam term added).
-    let steamAtlasReady = false;
-    let steamWhitelightScale = 1.0;
-    const steamRenderStartTimestamp = performance.now();
-    let lastSteamFrameIndex = 0;
-    const steamAtlasImage = new Image();
-    steamAtlasImage.crossOrigin = "anonymous";
 
     const timerQueryExtension = gl.getExtension("EXT_disjoint_timer_query_webgl2");
     const pendingTimerQueries: WebGLQuery[] = [];
     const exponentialAverageAlpha = 0.1;
     let cpuFrameMsAverage = 0;
     let gpuFrameMsAverage: number | null = timerQueryExtension ? 0 : null;
+    // Last screen-source revision we uploaded via texImage2D. -1 forces
+    // an upload on the first frame.
+    let lastUploadedScreenSourceRevision = -1;
     const recentFrameTimestamps: number[] = [];
     const recentFrameTimestampsCapacity = 60;
 
@@ -416,59 +361,6 @@ export function Compositor({
         console.warn("[compositor] failed to load position.exr:", error);
       });
 
-    steamAtlasImage.addEventListener(
-      "load",
-      () => {
-        if (cancelled || !gl) return;
-        gl.activeTexture(gl.TEXTURE0 + STEAM_ATLAS_UNIT);
-        gl.bindTexture(gl.TEXTURE_2D, steamAtlasTexture);
-        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, steamAtlasImage);
-        steamAtlasReady = true;
-      },
-      { once: true },
-    );
-    steamAtlasImage.addEventListener(
-      "error",
-      () => {
-        console.warn("[compositor] failed to load steam_atlas.png");
-      },
-      { once: true },
-    );
-    steamAtlasImage.src = steamAtlasPath;
-
-    fetch(steamAtlasMetaPath)
-      .then((response) => {
-        if (!response.ok) {
-          throw new Error(`steam_atlas_meta.json fetch returned ${response.status}`);
-        }
-        return response.json() as Promise<SteamAtlasMeta>;
-      })
-      .then((meta) => {
-        if (cancelled) return;
-        if (typeof meta.whitelightScale === "number" && Number.isFinite(meta.whitelightScale)) {
-          steamWhitelightScale = meta.whitelightScale;
-        }
-      })
-      .catch((error) => {
-        console.warn("[compositor] failed to load steam_atlas_meta.json:", error);
-      });
-
-    function currentSteamFrameIndex(nowMs: number): number {
-      const override = frameOverrideRef.current;
-      if (override !== null && Number.isFinite(override)) {
-        const clamped = Math.max(0, Math.min(steamFrameCount - 1, Math.floor(override)));
-        lastSteamFrameIndex = clamped;
-        return clamped;
-      }
-      if (framePausedRef.current) {
-        return lastSteamFrameIndex;
-      }
-      const elapsedSeconds = (nowMs - steamRenderStartTimestamp) / 1000;
-      const frame = Math.floor(elapsedSeconds * steamFps) % steamFrameCount;
-      lastSteamFrameIndex = frame;
-      return frame;
-    }
-
     function resizeCanvasToViewport(): void {
       if (!canvas || !gl) return;
       const devicePixelRatio = window.devicePixelRatio || 1;
@@ -511,7 +403,11 @@ export function Compositor({
       if (!screenSource) return;
       gl.activeTexture(gl.TEXTURE0 + SCREEN_UNIT);
       gl.bindTexture(gl.TEXTURE_2D, screenTexture);
-      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, screenSource);
+      const screenSourceRevision = screenSourceRevisionRef.current ?? 0;
+      if (screenSourceRevision !== lastUploadedScreenSourceRevision) {
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, screenSource);
+        lastUploadedScreenSourceRevision = screenSourceRevision;
+      }
 
       // Run the dual-Kawase blur chain if radius > 0. The composite
       // below samples the final blurred result from BLUR_OUTPUT_UNIT
@@ -594,23 +490,6 @@ export function Compositor({
       gl.uniform1f(screenSaturationUniformLocation, screenSaturationRef.current);
       gl.uniform1f(screenContrastUniformLocation, screenContrastRef.current);
       gl.uniform1f(screenBrightnessUniformLocation, screenBrightnessRef.current);
-      // Steam uniforms — gated to 0 (no contribution) until the atlas
-      // texture has actually finished uploading. The shader still
-      // expects the sampler bound, so do that unconditionally.
-      gl.uniform1i(steamAtlasUniformLocation, STEAM_ATLAS_UNIT);
-      gl.uniform1i(steamEnabledUniformLocation, steamEnabledRef.current && steamAtlasReady ? 1 : 0);
-      gl.uniform4f(
-        steamStripUniformLocation,
-        steamCrop.minX,
-        steamCrop.minY,
-        steamCrop.maxX,
-        steamCrop.maxY,
-      );
-      gl.uniform2f(steamAtlasGridSizeUniformLocation, steamAtlasColumns, steamAtlasRows);
-      gl.uniform1i(steamFrameIndexUniformLocation, currentSteamFrameIndex(performance.now()));
-      gl.uniform1f(steamIntensityUniformLocation, steamIntensityRef.current);
-      gl.uniform1f(steamMaxIntensityUniformLocation, Math.max(1e-4, steamMaxIntensityRef.current));
-      gl.uniform1f(steamWhitelightScaleUniformLocation, steamWhitelightScale);
       gl.drawArrays(gl.TRIANGLES, 0, 6);
       gl.bindVertexArray(null);
 
@@ -661,7 +540,6 @@ export function Compositor({
       gl.deleteTexture(beautyTexture);
       gl.deleteTexture(screenTexture);
       gl.deleteTexture(positionTexture);
-      gl.deleteTexture(steamAtlasTexture);
       for (const level of blurLevels) {
         gl.deleteTexture(level.texture);
         gl.deleteFramebuffer(level.framebuffer);
@@ -673,7 +551,7 @@ export function Compositor({
       gl.deleteProgram(upsampleProgram);
       for (const query of pendingTimerQueries) gl.deleteQuery(query);
     };
-  }, [screenSourceCanvasRef, perfMetricsRef]);
+  }, [screenSourceCanvasRef, perfMetricsRef, screenSourceRevisionRef]);
 
   return (
     <>

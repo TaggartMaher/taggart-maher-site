@@ -10,7 +10,7 @@ interface MarkdownProps {
 // Plugin list and component overrides are module-level so React sees
 // stable references across renders — without that, react-markdown
 // re-parses the AST on every parent render. The Portfolio shell
-// re-renders frequently (window drags, clock ticks, the foreignObject
+// re-renders frequently (window drags, clock ticks, the snapDOM
 // rasterization loop), so this matters.
 const REMARK_PLUGINS = [remarkGfm];
 

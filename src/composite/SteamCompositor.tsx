@@ -27,6 +27,13 @@ interface SteamCompositorProps {
   // shader multiplies its bounce by this canvas's color, so the two
   // composites stay visually consistent.
   screenSourceCanvasRef: React.RefObject<HTMLCanvasElement | null>;
+  // Monotonic revision bumped by ScreenOverlay every time the canvas is
+  // repainted. Skip the texImage2D upload when our last value matches.
+  screenSourceRevisionRef: React.RefObject<number>;
+  // User-controlled debug toggle. When on, the steam pass is suppressed
+  // entirely — same shape as `enabled = false`. Lets the user trade off
+  // the heaviest optional GPU cost on a slow iGPU.
+  ecoMode: boolean;
   enabled: boolean;
   // Multiplies the bounce contribution before the soft clamp.
   intensity: number;
@@ -97,6 +104,8 @@ function linkProgram(
 
 export function SteamCompositor({
   screenSourceCanvasRef,
+  screenSourceRevisionRef,
+  ecoMode,
   enabled,
   intensity,
   maxIntensity,
@@ -112,6 +121,8 @@ export function SteamCompositor({
   // without tearing down on every change.
   const enabledRef = useRef(enabled);
   enabledRef.current = enabled;
+  const ecoModeRef = useRef(ecoMode);
+  ecoModeRef.current = ecoMode;
   const intensityRef = useRef(intensity);
   intensityRef.current = intensity;
   const maxIntensityRef = useRef(maxIntensity);
@@ -368,6 +379,9 @@ export function SteamCompositor({
     }
 
     let lastFrameIndex = 0;
+    // Last screen-source revision uploaded via texImage2D; -1 forces an
+    // upload on the first frame.
+    let lastUploadedScreenSourceRevision = -1;
     function currentFrameIndex(nowMs: number): number {
       const override = frameOverrideRef.current;
       if (override !== null && Number.isFinite(override)) {
@@ -392,7 +406,7 @@ export function SteamCompositor({
       gl.clearColor(0, 0, 0, 0);
       gl.clear(gl.COLOR_BUFFER_BIT);
 
-      if (!enabledRef.current) {
+      if (!enabledRef.current || ecoModeRef.current) {
         return;
       }
 
@@ -400,7 +414,11 @@ export function SteamCompositor({
       if (!screenSource) return;
       gl.activeTexture(gl.TEXTURE0 + STEAM_SCREEN_UNIT);
       gl.bindTexture(gl.TEXTURE_2D, screenTexture);
-      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, screenSource);
+      const screenSourceRevision = screenSourceRevisionRef.current ?? 0;
+      if (screenSourceRevision !== lastUploadedScreenSourceRevision) {
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, screenSource);
+        lastUploadedScreenSourceRevision = screenSourceRevision;
+      }
 
       // Optional dual-Kawase blur chain. When the radius is > 0 we
       // run downsamples then upsamples, leaving the final blurred
@@ -527,7 +545,7 @@ export function SteamCompositor({
       // Reference manifestSeen so the linter doesn't strip the fetch path.
       void manifestSeen;
     };
-  }, [screenSourceCanvasRef]);
+  }, [screenSourceCanvasRef, screenSourceRevisionRef]);
 
   return <canvas ref={canvasRef} className="steam-compositor-canvas" />;
 }

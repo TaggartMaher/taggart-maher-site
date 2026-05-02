@@ -150,14 +150,17 @@ export function Portfolio() {
 
   // Track container size — all window math is container-relative because
   // the Portfolio is mounted inside the screen-rect overlay, not the
-  // viewport.
+  // viewport. Use offsetWidth/offsetHeight (CSS layout pixels), not
+  // getBoundingClientRect (post-transform viewport pixels): the parent
+  // .screen-overlay applies a matrix3d perspective, and we want window
+  // positions and sizes to live in the un-transformed natural space
+  // that positionX/Y / width / height are interpreted against.
   useLayoutEffect(() => {
     const node = containerRef.current;
     if (!node) return;
     function updateSize(): void {
       if (!node) return;
-      const rect = node.getBoundingClientRect();
-      setContainerSize({ width: rect.width, height: rect.height });
+      setContainerSize({ width: node.offsetWidth, height: node.offsetHeight });
     }
     updateSize();
     const observer = new ResizeObserver(updateSize);

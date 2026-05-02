@@ -12,6 +12,11 @@
   font-size: 13px;
   z-index: 1000;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  /* Visual-only shrink anchored at the top-right corner; the menu's
+     layout box stays the same size but renders at 90% so the panel
+     reads smaller without retuning every internal dimension. */
+  transform: scale(0.9);
+  transform-origin: top right;
 }
 
 .debug-menu-header {

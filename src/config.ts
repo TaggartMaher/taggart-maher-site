@@ -82,6 +82,19 @@ export function parseEnvFloat(rawValue: unknown, fallback: number): number {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+// Target FPS cap for the screen-content rasterizer. The rAF loop never
+// re-rasterizes faster than this, even if the display refresh rate is
+// higher (e.g. 144 Hz). The bounce light is heavily blurred so the
+// reader can't tell the rasterizer isn't running per-display-refresh.
+export const rasterizerFps = 60;
+
+// Multiplier applied to the rasterizer's snapDOM scale when the
+// user-toggled `ecoMode` debug setting is on. Smaller multipliers cut
+// SVG raster cost roughly quadratically at the cost of a softer source
+// for the bounce-light blur — usually invisible after the dual-Kawase
+// chain on the way to the emitter.
+export const ecoModeRasterizerScaleMultiplier = 0.025;
+
 export const steamCrop = {
   minX: parseEnvFloat(import.meta.env.STEAM_CROP_MIN_X, 0.375),
   maxX: parseEnvFloat(import.meta.env.STEAM_CROP_MAX_X, 0.625),

@@ -439,6 +439,18 @@ export function DebugMenu({ settings, onChange, perfMetricsRef }: DebugMenuProps
           <span>GPU / frame</span>
           <span>{formatMs(perf.gpuFrameMs)}</span>
         </div>
+        <div className="debug-menu-row">
+          <span>Rasterizer FPS</span>
+          <span>{formatFps(perf.rasterizerFps)}</span>
+        </div>
+        <label className="debug-menu-row">
+          <input
+            type="checkbox"
+            checked={settings.ecoMode}
+            onChange={(event) => onChange({ ...settings, ecoMode: event.target.checked })}
+          />
+          <span>Eco mode</span>
+        </label>
       </section>
 
       <footer className="debug-menu-footer">` to toggle</footer>
