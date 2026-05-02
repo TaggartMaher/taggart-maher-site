@@ -48,6 +48,7 @@ export function App() {
       <SteamCompositor
         screenSourceCanvasRef={screenSourceCanvasRef}
         screenSourceRevisionRef={screenSourceRevisionRef}
+        perfMetricsRef={perfMetricsRef}
         enabled={debugSettings.coffeeSteamEnabled}
         intensity={debugSettings.coffeeSteamIntensity}
         maxIntensity={debugSettings.coffeeSteamMaxIntensity}

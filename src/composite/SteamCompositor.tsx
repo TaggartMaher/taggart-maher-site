@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import {
+  rasterizerGpuFrameThresholdMs,
   steamAtlasColumns,
   steamAtlasMetaPath,
   steamAtlasPath,
@@ -9,6 +10,7 @@ import {
   steamFps,
   steamFrameCount,
 } from "../config";
+import type { PerfMetrics } from "./perfMetrics";
 import { downsampleFragmentShaderSource, upsampleFragmentShaderSource } from "./shader";
 import { steamFragmentShaderSource, steamVertexShaderSource } from "./steamShader";
 
@@ -30,6 +32,12 @@ interface SteamCompositorProps {
   // Monotonic revision bumped by ScreenOverlay every time the canvas is
   // repainted. Skip the texImage2D upload when our last value matches.
   screenSourceRevisionRef: React.RefObject<number>;
+  // Compositor's per-frame metrics. We treat the steam pass as disabled
+  // whenever the compositor reports gpuFrameMs at or above the
+  // low-power threshold — the steam shader (with its own blur chain)
+  // is the heaviest optional cost, so dropping it first gives the GPU
+  // back the most headroom.
+  perfMetricsRef: React.RefObject<PerfMetrics>;
   enabled: boolean;
   // Multiplies the bounce contribution before the soft clamp.
   intensity: number;
@@ -101,6 +109,7 @@ function linkProgram(
 export function SteamCompositor({
   screenSourceCanvasRef,
   screenSourceRevisionRef,
+  perfMetricsRef,
   enabled,
   intensity,
   maxIntensity,
@@ -402,6 +411,14 @@ export function SteamCompositor({
       if (!enabledRef.current) {
         return;
       }
+      // Treat the steam pass as disabled whenever the compositor's
+      // GPU/frame is at or above the low-power threshold. gpuFrameMs is
+      // already EMA-smoothed inside the compositor, so this read won't
+      // flicker on a single spike.
+      const gpuFrameMs = perfMetricsRef.current?.gpuFrameMs ?? null;
+      if (gpuFrameMs !== null && gpuFrameMs >= rasterizerGpuFrameThresholdMs) {
+        return;
+      }
 
       const screenSource = screenSourceCanvasRef.current;
       if (!screenSource) return;
@@ -538,7 +555,7 @@ export function SteamCompositor({
       // Reference manifestSeen so the linter doesn't strip the fetch path.
       void manifestSeen;
     };
-  }, [screenSourceCanvasRef, screenSourceRevisionRef]);
+  }, [screenSourceCanvasRef, screenSourceRevisionRef, perfMetricsRef]);
 
   return <canvas ref={canvasRef} className="steam-compositor-canvas" />;
 }
