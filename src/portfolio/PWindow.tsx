@@ -36,6 +36,24 @@ interface DragState {
   startWindowY: number;
   startWidth: number;
   startHeight: number;
+  // Viewport-pixels-per-natural-pixel scale captured at pointer-down.
+  // The Portfolio sits inside a matrix3d-transformed parent; pointer
+  // client-coord deltas are in viewport space while positionX/Y, width,
+  // and height live in the untransformed natural space, so we divide
+  // viewport deltas by this scale before applying them.
+  viewportScaleX: number;
+  viewportScaleY: number;
+}
+
+function readViewportScale(element: HTMLElement): { x: number; y: number } {
+  const portfolioContainer = element.closest(".portfolio") as HTMLElement | null;
+  if (!portfolioContainer) return { x: 1, y: 1 };
+  const naturalWidth = portfolioContainer.offsetWidth;
+  const naturalHeight = portfolioContainer.offsetHeight;
+  const projectedRect = portfolioContainer.getBoundingClientRect();
+  const x = naturalWidth > 0 ? projectedRect.width / naturalWidth : 1;
+  const y = naturalHeight > 0 ? projectedRect.height / naturalHeight : 1;
+  return { x, y };
 }
 
 export function PWindow({
@@ -69,6 +87,7 @@ export function PWindow({
     event.preventDefault();
     onFocus();
     event.currentTarget.setPointerCapture(event.pointerId);
+    const scale = readViewportScale(event.currentTarget);
     dragRef.current = {
       pointerId: event.pointerId,
       startMouseX: event.clientX,
@@ -77,6 +96,8 @@ export function PWindow({
       startWindowY: positionY,
       startWidth: width,
       startHeight: height,
+      viewportScaleX: scale.x,
+      viewportScaleY: scale.y,
     };
   }
 
@@ -86,8 +107,8 @@ export function PWindow({
     const minPositionX = -width + DRAG_KEEP_VISIBLE_PIXELS;
     const maxPositionX = Math.max(0, containerWidth - DRAG_KEEP_VISIBLE_PIXELS);
     const maxPositionY = Math.max(0, containerHeight - TASKBAR_HEIGHT - TITLEBAR_HEIGHT);
-    const nextX = drag.startWindowX + (event.clientX - drag.startMouseX);
-    const nextY = drag.startWindowY + (event.clientY - drag.startMouseY);
+    const nextX = drag.startWindowX + (event.clientX - drag.startMouseX) / drag.viewportScaleX;
+    const nextY = drag.startWindowY + (event.clientY - drag.startMouseY) / drag.viewportScaleY;
     const clampedX = Math.min(Math.max(nextX, minPositionX), maxPositionX);
     const clampedY = Math.min(Math.max(nextY, 0), maxPositionY);
     onMove(clampedX, clampedY);
@@ -109,6 +130,7 @@ export function PWindow({
     event.stopPropagation();
     onFocus();
     event.currentTarget.setPointerCapture(event.pointerId);
+    const scale = readViewportScale(event.currentTarget);
     resizeRef.current = {
       pointerId: event.pointerId,
       startMouseX: event.clientX,
@@ -117,16 +139,21 @@ export function PWindow({
       startWindowY: positionY,
       startWidth: width,
       startHeight: height,
+      viewportScaleX: scale.x,
+      viewportScaleY: scale.y,
     };
   }
 
   function handleResizePointerMove(event: React.PointerEvent<HTMLDivElement>): void {
     const resize = resizeRef.current;
     if (!resize || resize.pointerId !== event.pointerId) return;
-    const nextWidth = Math.max(MIN_WIDTH, resize.startWidth + (event.clientX - resize.startMouseX));
+    const nextWidth = Math.max(
+      MIN_WIDTH,
+      resize.startWidth + (event.clientX - resize.startMouseX) / resize.viewportScaleX,
+    );
     const nextHeight = Math.max(
       MIN_HEIGHT,
-      resize.startHeight + (event.clientY - resize.startMouseY),
+      resize.startHeight + (event.clientY - resize.startMouseY) / resize.viewportScaleY,
     );
     onResize(nextWidth, nextHeight);
   }
