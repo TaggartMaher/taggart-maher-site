@@ -125,7 +125,7 @@ export function ScreenOverlay({
     if (detectHtmlInCanvasSupport()) {
       console.info(
         "[overlay] HTML-in-Canvas (texElementImage2D) detected. Faster path " +
-          "available — currently using the foreignObject fallback. See " +
+          "available — currently using the snapDOM rasterizer. See " +
           "src/composite/htmlInCanvas.ts.",
       );
     }
@@ -136,8 +136,9 @@ export function ScreenOverlay({
   //   - Color background: paint once.
   //   - Portfolio (default): rAF loop, single in-flight snapshot, so
   //     the bounce-light texture tracks live UI changes (drag, focus,
-  //     window state) at whatever rate the foreignObject pipeline can
-  //     sustain.
+  //     window state). A dirty flag gates the snapshot so idle frames
+  //     skip the snapDOM capture entirely, and an FPS throttle with a
+  //     low-power fallback caps the rasterizer's worst-case CPU cost.
   // The square overlay is painted on top of whichever background is
   // current — for the rAF mode that means it gets re-painted after
   // each Portfolio snapshot.
@@ -462,8 +463,8 @@ export function ScreenOverlay({
   // Portfolio stays mounted whenever there's no image/color background,
   // even when the user has hidden the page overlay — the offscreen
   // texture-paint pass needs its DOM as a source. visibility:hidden
-  // (vs display:none) keeps layout + computed styles intact for the
-  // foreignObject rasterization to work.
+  // (vs display:none) keeps layout + computed styles intact so snapDOM
+  // can rasterize the live element.
   const portfolioMounted = !showImage && !showColor;
   const portfolioVisible = portfolioMounted && !settings.hidePageOverlay;
   // Drop the overlay's white fill when nothing visible should occlude
