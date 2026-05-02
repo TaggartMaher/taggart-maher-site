@@ -390,7 +390,11 @@ export function SteamCompositor({
         lastFrameIndex = clamped;
         return clamped;
       }
-      if (framePausedRef.current) {
+      // Pause the animation in low-power mode — the steam pass still
+      // renders so the strip stays visible, but the frame index sticks
+      // at whatever it last advanced to. Same effect as the user-driven
+      // framePaused toggle.
+      if (framePausedRef.current || perfMetricsRef.current?.lowPowerMode) {
         return lastFrameIndex;
       }
       const elapsedSeconds = (nowMs - renderStartTimestamp) / 1000;
@@ -408,14 +412,6 @@ export function SteamCompositor({
       gl.clear(gl.COLOR_BUFFER_BIT);
 
       if (!enabledRef.current) {
-        return;
-      }
-      // Treat the steam pass as disabled whenever the rasterizer loop
-      // has flagged low-power mode (GPU busy AND rasterizer active).
-      // ScreenOverlay publishes this — it has the dirty-flag context
-      // we need to know whether the busy GPU is actually our load to
-      // shed or just baseline cost.
-      if (perfMetricsRef.current?.lowPowerMode) {
         return;
       }
 
