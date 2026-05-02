@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { snapdom, preCache } from "@zumer/snapdom";
 import { detectHtmlInCanvasSupport } from "./htmlInCanvas";
 import { Portfolio } from "../portfolio/Portfolio";
 import { screenDimensions, screenProjectedCorners } from "../config";
@@ -40,63 +41,27 @@ interface ScreenOverlayProps {
   textureCanvasRef: React.RefObject<HTMLCanvasElement | null>;
 }
 
-// Serialize an HTMLElement into a canvas via SVG <foreignObject>. The
-// element's own styles plus all currently-loaded stylesheets are inlined
-// so the rendered SVG is self-contained. Cross-origin images and external
-// fonts won't load through this path — for the text-only Portfolio that's
-// fine; richer screen content will need a different pipeline.
+// Rasterize an HTMLElement onto the supplied texture canvas via snapDOM.
+// snapDOM clones the live element into a self-contained SVG with computed
+// styles and (with embedFonts) the relevant @font-face data inlined, so
+// cross-origin Google Fonts render correctly. cache: 'full' keeps the
+// inlined CSS / font URIs across captures so steady-state cost is
+// dominated by the SVG decode rather than style discovery.
 async function renderHtmlElementToCanvas(
   element: HTMLElement,
   canvas: HTMLCanvasElement,
 ): Promise<void> {
-  const styleText = Array.from(document.styleSheets)
-    .map((sheet) => {
-      try {
-        return Array.from(sheet.cssRules)
-          .map((rule) => rule.cssText)
-          .join("\n");
-      } catch {
-        // Cross-origin sheets throw on cssRules access — skip them.
-        return "";
-      }
-    })
-    .join("\n");
-
-  const serializer = new XMLSerializer();
-  const elementMarkup = serializer.serializeToString(element);
-
-  // Size the foreignObject to the live element's pixel size, not the
-  // texture canvas size. Window positions inside Portfolio are computed
-  // from the live container's getBoundingClientRect (see Portfolio.tsx),
-  // so the foreignObject must lay out at those same dimensions for the
-  // pixel coordinates to land in the right place. drawImage below
-  // stretches the result to the texture canvas.
-  const sourceRect = element.getBoundingClientRect();
-  const sourceWidth = Math.max(1, Math.round(sourceRect.width));
-  const sourceHeight = Math.max(1, Math.round(sourceRect.height));
-
-  const svg =
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${sourceWidth}" height="${sourceHeight}">` +
-    `<foreignObject width="100%" height="100%">` +
-    `<div xmlns="http://www.w3.org/1999/xhtml" style="width:${sourceWidth}px;height:${sourceHeight}px;background:#fafafa;overflow:hidden;">` +
-    `<style>${styleText}</style>` +
-    elementMarkup +
-    `</div>` +
-    `</foreignObject>` +
-    `</svg>`;
-
-  const dataUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
-  const image = new Image();
-  await new Promise<void>((resolve, reject) => {
-    image.onload = () => resolve();
-    image.onerror = () => reject(new Error("[overlay] foreignObject SVG image failed to load"));
-    image.src = dataUrl;
+  const result = await snapdom(element, {
+    fast: true,
+    embedFonts: true,
+    cache: "full",
+    backgroundColor: "#fafafa",
   });
-
+  const sourceCanvas = await result.toCanvas();
   const context = canvas.getContext("2d");
   if (!context) return;
   context.clearRect(0, 0, canvas.width, canvas.height);
-  context.drawImage(image, 0, 0, canvas.width, canvas.height);
+  context.drawImage(sourceCanvas, 0, 0, canvas.width, canvas.height);
 }
 
 export function ScreenOverlay({
@@ -108,6 +73,10 @@ export function ScreenOverlay({
   const overlayRef = useRef<HTMLDivElement | null>(null);
   const internalCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const loadedImageRef = useRef<{ url: string; image: HTMLImageElement } | null>(null);
+  // Tracks the Portfolio container element identity that snapDOM has
+  // already pre-cached for. Re-runs preCache if the container ref points
+  // at a different element (mode toggles cause remounts).
+  const precachedContainerRef = useRef<HTMLElement | null>(null);
   // Mirror settings into a ref so the rAF rasterization loop can read
   // the latest values (square pos, colors) without tearing down on
   // every settings change — the loop only needs to restart when the
@@ -203,6 +172,11 @@ export function ScreenOverlay({
       if (!source || !canvas) return;
       rasterizing = true;
       try {
+        if (precachedContainerRef.current !== source) {
+          precachedContainerRef.current = source;
+          await preCache(source, { embedFonts: true });
+          if (cancelled) return;
+        }
         await renderHtmlElementToCanvas(source, canvas);
       } catch (error) {
         if (!context) return;
