@@ -13,10 +13,12 @@ import type { DebugSettings } from "../debug/debugSettings";
 import "./screenOverlay.css";
 
 // Resolution of the offscreen canvas that backs the screen-content texture.
-// Width chosen to be roughly the on-screen pixel width of the screen plane
-// at common viewport sizes; height keeps the screen plane's true world
+// The bounce light dual-Kawase-blurs this texture before multiplying it
+// into the emitter, so high resolution gets blurred away — width is
+// sized roughly to the on-screen pixel width of the screen plane at
+// common viewport sizes. Height keeps the screen plane's true world
 // aspect so the bounce-light texture maps without distortion.
-const TEXTURE_WIDTH = 1920;
+const TEXTURE_WIDTH = 1280;
 const TEXTURE_HEIGHT = Math.round(
   (TEXTURE_WIDTH * screenDimensions.heightMeters) / screenDimensions.widthMeters,
 );
