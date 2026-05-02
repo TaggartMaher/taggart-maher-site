@@ -5,6 +5,7 @@ import { Portfolio } from "../portfolio/Portfolio";
 import {
   rasterizerGpuFrameThresholdMs,
   rasterizerLowPowerFps,
+  rasterizerLowPowerScaleMultiplier,
   rasterizerNormalFps,
   screenDimensions,
   screenProjectedCorners,
@@ -75,13 +76,14 @@ interface ScreenOverlayProps {
 async function renderHtmlElementToCanvas(
   element: HTMLElement,
   canvas: HTMLCanvasElement,
+  rasterScale: number,
 ): Promise<void> {
   const result = await snapdom(element, {
     fast: true,
     embedFonts: true,
     cache: "full",
     backgroundColor: "#fafafa",
-    scale: RASTERIZER_SCALE,
+    scale: rasterScale,
   });
   const sourceCanvas = await result.toCanvas();
   const context = canvas.getContext("2d");
@@ -206,7 +208,7 @@ export function ScreenOverlay({
       context.drawImage(cached.image, 0, 0, canvas.width, canvas.height);
     }
 
-    async function snapshotPortfolio(): Promise<void> {
+    async function snapshotPortfolio(rasterScale: number): Promise<void> {
       if (rasterizing) return;
       const source = portfolioContainerRef.current;
       if (!source || !canvas) return;
@@ -217,7 +219,7 @@ export function ScreenOverlay({
           await preCache(source, { embedFonts: true });
           if (cancelled) return;
         }
-        await renderHtmlElementToCanvas(source, canvas);
+        await renderHtmlElementToCanvas(source, canvas, rasterScale);
       } catch (error) {
         if (!context) return;
         console.warn("[overlay] failed to rasterize Portfolio DOM:", error);
@@ -325,10 +327,11 @@ export function ScreenOverlay({
         // already smoothed; null means the timer-query extension isn't
         // available and we stay at the normal target.
         const gpuFrameMs = perfMetricsRef.current?.gpuFrameMs ?? null;
-        const targetFps =
-          gpuFrameMs !== null && gpuFrameMs >= rasterizerGpuFrameThresholdMs
-            ? rasterizerLowPowerFps
-            : rasterizerNormalFps;
+        const lowPower = gpuFrameMs !== null && gpuFrameMs >= rasterizerGpuFrameThresholdMs;
+        const targetFps = lowPower ? rasterizerLowPowerFps : rasterizerNormalFps;
+        const rasterScale = lowPower
+          ? RASTERIZER_SCALE * rasterizerLowPowerScaleMultiplier
+          : RASTERIZER_SCALE;
         const frameIntervalMs = 1000 / targetFps;
         if (dirtyRef.current && now - lastRasterizationTimestamp >= frameIntervalMs) {
           // Clear the flag BEFORE awaiting the snapshot so any change
@@ -336,7 +339,7 @@ export function ScreenOverlay({
           // picked up on the next tick.
           dirtyRef.current = false;
           lastRasterizationTimestamp = now;
-          void snapshotPortfolio().then(() => {
+          void snapshotPortfolio(rasterScale).then(() => {
             if (cancelled) return;
             paintSquare();
             bumpRevision();

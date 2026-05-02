@@ -99,6 +99,12 @@ export const rasterizerLowPowerFps = 30;
 // normal target.
 export const rasterizerGpuFrameThresholdMs = 0.5;
 
+// Multiplier applied to the rasterizer's snapDOM scale when the loop is
+// in low-power mode. Halving in each axis cuts SVG raster cost ~4× at
+// the cost of a softer source for the bounce-light blur — invisible
+// after the dual-Kawase chain.
+export const rasterizerLowPowerScaleMultiplier = 0.5;
+
 export const steamCrop = {
   minX: parseEnvFloat(import.meta.env.STEAM_CROP_MIN_X, 0.375),
   maxX: parseEnvFloat(import.meta.env.STEAM_CROP_MAX_X, 0.625),
