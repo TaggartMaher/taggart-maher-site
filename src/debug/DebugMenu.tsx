@@ -439,6 +439,10 @@ export function DebugMenu({ settings, onChange, perfMetricsRef }: DebugMenuProps
           <span>GPU / frame</span>
           <span>{formatMs(perf.gpuFrameMs)}</span>
         </div>
+        <div className="debug-menu-row">
+          <span>Rasterizer FPS</span>
+          <span>{formatFps(perf.rasterizerFps)}</span>
+        </div>
       </section>
 
       <footer className="debug-menu-footer">` to toggle</footer>

@@ -254,8 +254,38 @@ export function ScreenOverlay({
       dirtyRef.current = true;
       const container = portfolioContainerRef.current;
       let lastRasterizationTimestamp = 0;
+      // Sliding-window timestamps (ms) of recent successful rasterizations.
+      // Same shape as the compositor's displayFps measurement: count
+      // entries within the last second, divide by elapsed window.
+      const recentRasterizationTimestamps: number[] = [];
       function markDirty(): void {
         dirtyRef.current = true;
+      }
+      function evictOldRasterizationTimestamps(nowMs: number): void {
+        while (
+          recentRasterizationTimestamps.length > 0 &&
+          nowMs - recentRasterizationTimestamps[0] > 1000
+        ) {
+          recentRasterizationTimestamps.shift();
+        }
+      }
+      function publishRasterizerFps(nowMs: number): void {
+        evictOldRasterizationTimestamps(nowMs);
+        const sampleCount = recentRasterizationTimestamps.length;
+        let rasterizerFps = 0;
+        if (sampleCount >= 2) {
+          const elapsedSeconds = (nowMs - recentRasterizationTimestamps[0]) / 1000;
+          if (elapsedSeconds > 0) {
+            rasterizerFps = (sampleCount - 1) / elapsedSeconds;
+          }
+        }
+        if (perfMetricsRef.current) {
+          perfMetricsRef.current.rasterizerFps = rasterizerFps;
+        }
+      }
+      function recordRasterization(timestampMs: number): void {
+        recentRasterizationTimestamps.push(timestampMs);
+        publishRasterizerFps(timestampMs);
       }
       const containerEventNames = [
         "pointermove",
@@ -286,6 +316,10 @@ export function ScreenOverlay({
       function tick(): void {
         if (cancelled) return;
         const now = performance.now();
+        // Refresh rasterizerFps every tick so it decays toward 0 during
+        // idle — recordRasterization alone wouldn't update it once
+        // snapshots stop arriving.
+        publishRasterizerFps(now);
         // Pick the target FPS off the compositor's GPU/frame metric. The
         // metric itself is an EMA inside the compositor, so this read is
         // already smoothed; null means the timer-query extension isn't
@@ -306,6 +340,7 @@ export function ScreenOverlay({
             if (cancelled) return;
             paintSquare();
             bumpRevision();
+            recordRasterization(performance.now());
             rafId = requestAnimationFrame(tick);
           });
         } else {
