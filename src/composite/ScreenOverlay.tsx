@@ -79,6 +79,12 @@ export function ScreenOverlay({
   // already pre-cached for. Re-runs preCache if the container ref points
   // at a different element (mode toggles cause remounts).
   const precachedContainerRef = useRef<HTMLElement | null>(null);
+  // Dirty flag for the Portfolio-mode rAF loop. When true the next tick
+  // re-rasterizes; when false the tick only repaints the square overlay
+  // on top of the existing snapshot. Listeners and observers below set
+  // this true on any change; the loop clears it before each snapshot.
+  // Initial true so the first paint always runs.
+  const dirtyRef = useRef(true);
   // Mirror settings into a ref so the rAF rasterization loop can read
   // the latest values (square pos, colors) without tearing down on
   // every settings change — the loop only needs to restart when the
@@ -207,16 +213,71 @@ export function ScreenOverlay({
     } else {
       // Portfolio mode — drive a self-paced rAF loop. The next frame
       // schedules only after the previous snapshot resolves, so we
-      // never queue more than one foreignObject decode at a time.
+      // never queue more than one snapDOM capture at a time. The dirty
+      // flag gates the snapshot: in steady-state idle the loop only
+      // re-paints the square overlay onto the previous snapshot, which
+      // is effectively free.
+      dirtyRef.current = true;
+      const container = portfolioContainerRef.current;
+      function markDirty(): void {
+        dirtyRef.current = true;
+      }
+      const containerEventNames = [
+        "pointermove",
+        "pointerdown",
+        "pointerup",
+        "focusin",
+        "focusout",
+        "scroll",
+      ] as const;
+      const containerEventOptions: AddEventListenerOptions = { capture: true };
+      let mutationObserver: MutationObserver | null = null;
+      let resizeObserver: ResizeObserver | null = null;
+      if (container) {
+        mutationObserver = new MutationObserver(markDirty);
+        mutationObserver.observe(container, {
+          subtree: true,
+          childList: true,
+          characterData: true,
+          attributes: true,
+        });
+        resizeObserver = new ResizeObserver(markDirty);
+        resizeObserver.observe(container);
+        for (const eventName of containerEventNames) {
+          container.addEventListener(eventName, markDirty, containerEventOptions);
+        }
+      }
+
       function tick(): void {
         if (cancelled) return;
-        void snapshotPortfolio().then(() => {
-          if (cancelled) return;
+        if (dirtyRef.current) {
+          // Clear the flag BEFORE awaiting the snapshot so any change
+          // observed during the in-flight capture re-marks dirty and is
+          // picked up on the next tick.
+          dirtyRef.current = false;
+          void snapshotPortfolio().then(() => {
+            if (cancelled) return;
+            paintSquare();
+            rafId = requestAnimationFrame(tick);
+          });
+        } else {
           paintSquare();
           rafId = requestAnimationFrame(tick);
-        });
+        }
       }
       rafId = requestAnimationFrame(tick);
+
+      return () => {
+        cancelled = true;
+        if (rafId) cancelAnimationFrame(rafId);
+        mutationObserver?.disconnect();
+        resizeObserver?.disconnect();
+        if (container) {
+          for (const eventName of containerEventNames) {
+            container.removeEventListener(eventName, markDirty, containerEventOptions);
+          }
+        }
+      };
     }
 
     return () => {
@@ -228,6 +289,20 @@ export function ScreenOverlay({
     settings.imageBackgroundUrl,
     settings.colorBackgroundEnabled,
     settings.colorBackgroundColor,
+  ]);
+
+  // The square overlay sits outside the Portfolio container, so the
+  // container's pointer/mutation observers do not see square drags. Mark
+  // the rAF loop dirty whenever a square-affecting setting changes so
+  // the next tick re-rasterizes — otherwise the previous square pixels
+  // would ghost on top of the cached snapshot.
+  useEffect(() => {
+    dirtyRef.current = true;
+  }, [
+    settings.squareEnabled,
+    settings.squareColor,
+    settings.squareNormalizedX,
+    settings.squareNormalizedY,
   ]);
 
   // Recompute the perspective transform on viewport size change. The
