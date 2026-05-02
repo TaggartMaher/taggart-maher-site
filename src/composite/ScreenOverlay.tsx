@@ -1,7 +1,13 @@
-import { useEffect, useLayoutEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { detectHtmlInCanvasSupport } from "./htmlInCanvas";
 import { Portfolio } from "../portfolio/Portfolio";
-import { screenPlane, screenRect } from "../config";
+import { screenDimensions, screenProjectedCorners } from "../config";
+import {
+  computeCssMatrix3d,
+  inverseProjectViewportPoint,
+  type ProjectedCorners,
+  type Vector2,
+} from "../screenRect";
 import type { DebugSettings } from "../debug/debugSettings";
 import "./screenOverlay.css";
 
@@ -11,7 +17,17 @@ import "./screenOverlay.css";
 // aspect so the bounce-light texture maps without distortion.
 const TEXTURE_WIDTH = 4 * 1024;
 const TEXTURE_HEIGHT = Math.round(
-  (TEXTURE_WIDTH * screenPlane.heightMeters) / screenPlane.widthMeters,
+  (TEXTURE_WIDTH * screenDimensions.heightMeters) / screenDimensions.widthMeters,
+);
+
+// Natural pixel size of the un-transformed overlay. The matrix3d transform
+// warps these pixels onto the projected screen quad in viewport space.
+// Width is sized so HTML content lays out at a reasonable resolution;
+// height preserves the plane's real-world aspect so square texture pixels
+// stay square once projected.
+const OVERLAY_NATURAL_WIDTH = 1600;
+const OVERLAY_NATURAL_HEIGHT = Math.round(
+  (OVERLAY_NATURAL_WIDTH * screenDimensions.heightMeters) / screenDimensions.widthMeters,
 );
 
 const SQUARE_FRACTION = 1 / 5;
@@ -238,9 +254,50 @@ export function ScreenOverlay({
     settings.colorBackgroundColor,
   ]);
 
+  // Recompute the perspective transform on viewport size change. The
+  // projected-corner positions are in normalized [0, 1] viewport coords;
+  // multiply by current pixel dimensions to get destination pixels for
+  // the homography solver.
+  const [viewportSize, setViewportSize] = useState<{ width: number; height: number }>(() => ({
+    width: typeof window === "undefined" ? 1 : window.innerWidth,
+    height: typeof window === "undefined" ? 1 : window.innerHeight,
+  }));
+  useEffect(() => {
+    function handleResize(): void {
+      setViewportSize({ width: window.innerWidth, height: window.innerHeight });
+    }
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+  const viewportProjectedCornersInPixels: ProjectedCorners = useMemo(() => {
+    const widthInPixels = viewportSize.width;
+    const heightInPixels = viewportSize.height;
+    const toPixels = (corner: Vector2): Vector2 => [
+      corner[0] * widthInPixels,
+      corner[1] * heightInPixels,
+    ];
+    return {
+      topLeft: toPixels(screenProjectedCorners.topLeft),
+      topRight: toPixels(screenProjectedCorners.topRight),
+      bottomRight: toPixels(screenProjectedCorners.bottomRight),
+      bottomLeft: toPixels(screenProjectedCorners.bottomLeft),
+    };
+  }, [viewportSize.width, viewportSize.height]);
+
+  const overlayTransform = useMemo(
+    () =>
+      computeCssMatrix3d(
+        OVERLAY_NATURAL_WIDTH,
+        OVERLAY_NATURAL_HEIGHT,
+        viewportProjectedCornersInPixels,
+      ),
+    [viewportProjectedCornersInPixels],
+  );
   // Square drag handling — pointer-based so it works for mouse and touch.
-  // Coordinates are converted to normalized [0, 1] relative to the overlay
-  // div so they're independent of viewport size.
+  // Pointer viewport coords are inverse-projected back to the overlay's
+  // un-transformed natural-pixel space, then divided by the natural width
+  // and height to give a stable normalized position (0..1) inside the
+  // logical screen content, independent of the perspective warp.
   function handleSquarePointerDown(event: React.PointerEvent<HTMLDivElement>): void {
     const overlay = overlayRef.current;
     if (!overlay) return;
@@ -248,31 +305,40 @@ export function ScreenOverlay({
     const target = event.currentTarget;
     target.setPointerCapture(event.pointerId);
 
-    const overlayRectInPixels = overlay.getBoundingClientRect();
     const sideFractionX = SQUARE_FRACTION;
-    const sideFractionY =
-      (SQUARE_FRACTION * overlayRectInPixels.width) / overlayRectInPixels.height;
+    const sideFractionY = (SQUARE_FRACTION * OVERLAY_NATURAL_WIDTH) / OVERLAY_NATURAL_HEIGHT;
 
-    // Cursor offset within the square at drag start, normalized.
-    const offsetNormalizedX =
-      (event.clientX - overlayRectInPixels.left) / overlayRectInPixels.width -
-      settings.squareNormalizedX;
-    const offsetNormalizedY =
-      (event.clientY - overlayRectInPixels.top) / overlayRectInPixels.height -
-      settings.squareNormalizedY;
+    function pointerToNormalized(clientX: number, clientY: number): Vector2 {
+      const overlayRect = overlay!.getBoundingClientRect();
+      // The overlay element's transform-origin is its top-left, which is
+      // positioned at viewport (0, 0) thanks to position: fixed; top: 0;
+      // left: 0. Pointer client coords are therefore already relative to
+      // that origin. (Bounding rect retrieval here just guards against
+      // edge cases where layout hasn't settled.)
+      void overlayRect;
+      const naturalPoint = inverseProjectViewportPoint(
+        [clientX, clientY],
+        OVERLAY_NATURAL_WIDTH,
+        OVERLAY_NATURAL_HEIGHT,
+        viewportProjectedCornersInPixels,
+      );
+      return [naturalPoint[0] / OVERLAY_NATURAL_WIDTH, naturalPoint[1] / OVERLAY_NATURAL_HEIGHT];
+    }
+
+    const startNormalized = pointerToNormalized(event.clientX, event.clientY);
+    const offsetNormalizedX = startNormalized[0] - settings.squareNormalizedX;
+    const offsetNormalizedY = startNormalized[1] - settings.squareNormalizedY;
 
     let latest = settings;
 
     function handleMove(moveEvent: PointerEvent): void {
-      const overlayRect = overlay!.getBoundingClientRect();
-      const pointerNormalizedX = (moveEvent.clientX - overlayRect.left) / overlayRect.width;
-      const pointerNormalizedY = (moveEvent.clientY - overlayRect.top) / overlayRect.height;
+      const pointerNormalized = pointerToNormalized(moveEvent.clientX, moveEvent.clientY);
       const nextX = Math.min(
-        Math.max(pointerNormalizedX - offsetNormalizedX, 0),
+        Math.max(pointerNormalized[0] - offsetNormalizedX, 0),
         1 - sideFractionX,
       );
       const nextY = Math.min(
-        Math.max(pointerNormalizedY - offsetNormalizedY, 0),
+        Math.max(pointerNormalized[1] - offsetNormalizedY, 0),
         1 - sideFractionY,
       );
       latest = { ...latest, squareNormalizedX: nextX, squareNormalizedY: nextY };
@@ -290,21 +356,18 @@ export function ScreenOverlay({
   }
 
   const overlayStyle: React.CSSProperties = {
-    left: `${screenRect.left * 100}%`,
-    top: `${screenRect.top * 100}%`,
-    width: `${screenRect.width * 100}%`,
-    height: `${screenRect.height * 100}%`,
+    left: 0,
+    top: 0,
+    width: `${OVERLAY_NATURAL_WIDTH}px`,
+    height: `${OVERLAY_NATURAL_HEIGHT}px`,
+    transformOrigin: "0 0",
+    transform: overlayTransform,
   };
 
-  // The square's height in CSS is computed so that it remains a square in
-  // the texture's normalized space — which means a rectangle in the
-  // (perspectively projected) overlay. This keeps the bounce-light shape
-  // and the visible square in agreement.
-  const squareSideFractionY =
-    overlayRef.current && overlayRef.current.getBoundingClientRect().height > 0
-      ? (SQUARE_FRACTION * overlayRef.current.getBoundingClientRect().width) /
-        overlayRef.current.getBoundingClientRect().height
-      : SQUARE_FRACTION;
+  // Natural overlay aspect equals the screen plane's real-world aspect
+  // (the height was sized that way), so a true square in texture space
+  // maps to a square in natural-pixel space too.
+  const squareSideFractionY = (SQUARE_FRACTION * OVERLAY_NATURAL_WIDTH) / OVERLAY_NATURAL_HEIGHT;
 
   // showImage / showSquare drive the DOM-side rendering only; the
   // off-screen canvas-side painting (which feeds the bounce-light

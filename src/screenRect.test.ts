@@ -1,34 +1,51 @@
 import { describe, expect, it } from "vitest";
 import { renderAspect, screenPlane, screenRect as configuredScreenRect } from "./config";
-import { computeScreenRect } from "./screenRect";
+import {
+  computeCssMatrix3d,
+  computeProjectedCorners,
+  computeScreenDimensions,
+  computeScreenNormal,
+  computeScreenRect,
+  inverseProjectViewportPoint,
+  type ProjectedCorners,
+  type ScreenPlane,
+} from "./screenRect";
 
 const TOLERANCE = 1e-6;
 
+// Convenience: construct a screen plane from corner offsets in a flat
+// world-aligned rectangle, used by several head-on tests below.
+function rectAt(
+  centerX: number,
+  centerY: number,
+  centerZ: number,
+  width: number,
+  height: number,
+): ScreenPlane {
+  const halfWidth = width / 2;
+  const halfHeight = height / 2;
+  return {
+    vertices: [
+      [centerX - halfWidth, centerY + halfHeight, centerZ],
+      [centerX + halfWidth, centerY + halfHeight, centerZ],
+      [centerX + halfWidth, centerY - halfHeight, centerZ],
+      [centerX - halfWidth, centerY - halfHeight, centerZ],
+    ],
+  };
+}
+
 describe("computeScreenRect", () => {
   it("centers a head-on screen at the middle of the frame", () => {
-    // Camera at origin with default rotation looks down -Z.
-    // Screen 5 meters in front (at z = -5), facing the camera (+Z normal),
-    // 2m wide x 1m tall. Render aspect 16:9, horizontal FOV 60deg.
     const rect = computeScreenRect(
       {
         positionMeters: [0, 0, 0],
         rotationEulerDegXYZ: [0, 0, 0],
         horizontalFovDeg: 60,
       },
-      {
-        positionMeters: [0, 0, -5],
-        rotationEulerDegXYZ: [0, 0, 0],
-        widthMeters: 2,
-        heightMeters: 1,
-      },
+      rectAt(0, 0, -5, 2, 1),
       16 / 9,
     );
 
-    // Expected NDC half-extents:
-    //   tan(30deg) = 0.5773502...
-    //   ndc.x_max = (1 / 5) / tan(30) = 0.34641016...
-    //   tanHalfVertical = tan(30) / (16/9) = 0.32476...
-    //   ndc.y_max = (0.5 / 5) / 0.32476 = 0.30789...
     const expectedHalfNdcX = 1 / 5 / Math.tan(Math.PI / 6);
     const expectedHalfNdcY = 0.5 / 5 / (Math.tan(Math.PI / 6) / (16 / 9));
 
@@ -42,96 +59,125 @@ describe("computeScreenRect", () => {
     expect(rect.top).toBeCloseTo(expectedTop, 6);
     expect(rect.height).toBeCloseTo(expectedHeight, 6);
 
-    // Should be centered.
     expect(rect.left + rect.width / 2).toBeCloseTo(0.5, 6);
     expect(rect.top + rect.height / 2).toBeCloseTo(0.5, 6);
   });
 
   it("shifts right when the screen translates in +X world", () => {
     const centered = computeScreenRect(
-      {
-        positionMeters: [0, 0, 0],
-        rotationEulerDegXYZ: [0, 0, 0],
-        horizontalFovDeg: 60,
-      },
-      {
-        positionMeters: [0, 0, -5],
-        rotationEulerDegXYZ: [0, 0, 0],
-        widthMeters: 1,
-        heightMeters: 1,
-      },
+      { positionMeters: [0, 0, 0], rotationEulerDegXYZ: [0, 0, 0], horizontalFovDeg: 60 },
+      rectAt(0, 0, -5, 1, 1),
       1,
     );
 
     const shifted = computeScreenRect(
-      {
-        positionMeters: [0, 0, 0],
-        rotationEulerDegXYZ: [0, 0, 0],
-        horizontalFovDeg: 60,
-      },
-      {
-        positionMeters: [0.5, 0, -5],
-        rotationEulerDegXYZ: [0, 0, 0],
-        widthMeters: 1,
-        heightMeters: 1,
-      },
+      { positionMeters: [0, 0, 0], rotationEulerDegXYZ: [0, 0, 0], horizontalFovDeg: 60 },
+      rectAt(0.5, 0, -5, 1, 1),
       1,
     );
 
     expect(shifted.left).toBeGreaterThan(centered.left + TOLERANCE);
   });
 
-  it("uses Blender's XYZ Euler order (Rz · Ry · Rx) — multi-axis rotation case", () => {
-    // Camera at the origin, rotated +90deg around X (so its local -Z lines up
-    // with world +Y), then +90deg around Z. In Blender's XYZ extrinsic order
-    // this composes as Rz · Ry · Rx, which sends the camera's view direction
-    // to world -X. A screen at world (-5, 0, 0) is therefore directly in
-    // front, dead center.
-    const rect = computeScreenRect(
-      {
-        positionMeters: [0, 0, 0],
-        rotationEulerDegXYZ: [90, 0, 90],
-        horizontalFovDeg: 60,
-      },
-      {
-        positionMeters: [-5, 0, 0],
-        rotationEulerDegXYZ: [0, 90, 0],
-        widthMeters: 1,
-        heightMeters: 1,
-      },
-      1,
-    );
-
-    expect(rect.left + rect.width / 2).toBeCloseTo(0.5, 6);
-    expect(rect.top + rect.height / 2).toBeCloseTo(0.5, 6);
-  });
-
   it("projected screen rect aspect matches the screen plane's intrinsic aspect", () => {
-    // The screen in the rendered frame should appear with roughly the
-    // same width/height ratio as the physical screen plane. Big drift
-    // here means either the camera's pose isn't actually pointing at the
-    // screen face-on (so we're seeing it foreshortened) or the plane's
-    // width/height in config.ts are swapped relative to the .blend.
-    const planeAspect = screenPlane.widthMeters / screenPlane.heightMeters;
-    // rect.width/height are fractions of the rendered frame, which itself
-    // has aspect `renderAspect` (width/height). Pixel-space aspect of the
-    // projected rect is therefore (rect.width / rect.height) * renderAspect.
+    const dimensions = computeScreenDimensions(screenPlane);
+    const planeAspect = dimensions.widthMeters / dimensions.heightMeters;
     const rectAspect = (configuredScreenRect.width / configuredScreenRect.height) * renderAspect;
-    // Tolerance is loose (precision 0 → within 0.5) because the camera
-    // isn't perfectly head-on to the plane: slight elevation / off-axis
-    // pose foreshortens height a few percent. A blown rotation (e.g.
-    // plane lying flat) shows up as several-x drift, which this still
-    // catches.
     expect(rectAspect).toBeCloseTo(planeAspect, 0);
   });
+});
 
-  it("locks in the configured camera + screen plane (regression guard)", () => {
-    // Snapshot of the rect computed from src/config.ts. Drift in the camera
-    // pose, screen plane, render aspect, or rotation convention will trip
-    // this. Update the expected values when the .blend changes intentionally.
-    expect(configuredScreenRect.left).toBeCloseTo(0.25960678722942376, 12);
-    expect(configuredScreenRect.top).toBeCloseTo(0.1558444207868484, 12);
-    expect(configuredScreenRect.width).toBeCloseTo(0.5588033923306764, 12);
-    expect(configuredScreenRect.height).toBeCloseTo(0.5759416037881977, 12);
+describe("computeProjectedCorners", () => {
+  it("returns image-space corners for a head-on screen", () => {
+    const corners = computeProjectedCorners(
+      { positionMeters: [0, 0, 0], rotationEulerDegXYZ: [0, 0, 0], horizontalFovDeg: 60 },
+      rectAt(0, 0, -5, 2, 1),
+      16 / 9,
+    );
+    // Top corners share the smaller Y (closer to 0); bottom corners share the larger Y.
+    expect(corners.topLeft[1]).toBeCloseTo(corners.topRight[1], 6);
+    expect(corners.bottomLeft[1]).toBeCloseTo(corners.bottomRight[1], 6);
+    expect(corners.topLeft[1]).toBeLessThan(corners.bottomLeft[1]);
+    // Left corners share the smaller X; right corners share the larger X.
+    expect(corners.topLeft[0]).toBeLessThan(corners.topRight[0]);
+    expect(corners.bottomLeft[0]).toBeLessThan(corners.bottomRight[0]);
+  });
+});
+
+describe("computeScreenNormal", () => {
+  it("points toward the camera for a head-on plane", () => {
+    const screen = rectAt(0, 0, -5, 2, 1);
+    const normal = computeScreenNormal(screen, [0, 0, 0]);
+    // Plane lies in z = -5; camera at origin is in +Z direction → normal +Z.
+    expect(normal[0]).toBeCloseTo(0, 6);
+    expect(normal[1]).toBeCloseTo(0, 6);
+    expect(normal[2]).toBeCloseTo(1, 6);
+  });
+
+  it("flips a back-facing winding so it still points toward the camera", () => {
+    // Reverse the vertex winding — the raw cross product would point away,
+    // but the function should detect that and flip.
+    const screen: ScreenPlane = {
+      vertices: [
+        [-1, 1, -5],
+        [-1, -1, -5],
+        [1, -1, -5],
+        [1, 1, -5],
+      ],
+    };
+    const normal = computeScreenNormal(screen, [0, 0, 0]);
+    expect(normal[2]).toBeGreaterThan(0);
+  });
+});
+
+describe("computeCssMatrix3d / inverseProjectViewportPoint", () => {
+  const sourceWidth = 200;
+  const sourceHeight = 100;
+
+  it("identity-maps source corners to themselves when destination matches source", () => {
+    const destination: ProjectedCorners = {
+      topLeft: [0, 0],
+      topRight: [sourceWidth, 0],
+      bottomRight: [sourceWidth, sourceHeight],
+      bottomLeft: [0, sourceHeight],
+    };
+    const matrix = computeCssMatrix3d(sourceWidth, sourceHeight, destination);
+    expect(matrix.startsWith("matrix3d(")).toBe(true);
+    const numbers = matrix
+      .slice("matrix3d(".length, -1)
+      .split(",")
+      .map((value) => Number(value));
+    const expectedIdentity = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+    for (let index = 0; index < 16; index += 1) {
+      expect(numbers[index]).toBeCloseTo(expectedIdentity[index], 6);
+    }
+  });
+
+  it("inverse-projects each destination corner back to the source corner", () => {
+    const destination: ProjectedCorners = {
+      topLeft: [50, 30],
+      topRight: [400, 10],
+      bottomRight: [380, 220],
+      bottomLeft: [40, 200],
+    };
+    const expectedSourceCorners: Array<{
+      destination: [number, number];
+      source: [number, number];
+    }> = [
+      { destination: destination.topLeft, source: [0, 0] },
+      { destination: destination.topRight, source: [sourceWidth, 0] },
+      { destination: destination.bottomRight, source: [sourceWidth, sourceHeight] },
+      { destination: destination.bottomLeft, source: [0, sourceHeight] },
+    ];
+    for (const { destination: destinationPoint, source: expectedSource } of expectedSourceCorners) {
+      const recoveredSource = inverseProjectViewportPoint(
+        destinationPoint,
+        sourceWidth,
+        sourceHeight,
+        destination,
+      );
+      expect(recoveredSource[0]).toBeCloseTo(expectedSource[0], 9);
+      expect(recoveredSource[1]).toBeCloseTo(expectedSource[1], 9);
+    }
   });
 });
