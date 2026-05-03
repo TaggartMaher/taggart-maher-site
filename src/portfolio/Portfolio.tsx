@@ -146,11 +146,14 @@ const DESKTOP_ICONS: Array<{ id: AppId; label: string; icon: ReactNode }> = [
 // README link, but doesn't sit in the launcher next to content apps.
 const LAUNCHER_EXCLUDED_APPS: ReadonlySet<AppId> = new Set(["home", "settings"]);
 
-function formatHourLabel(date: Date): string {
+function formatHour12(date: Date): string {
   const hour24 = date.getHours();
   const hour12 = hour24 % 12 === 0 ? 12 : hour24 % 12;
-  const meridiem = hour24 < 12 ? "AM" : "PM";
-  return `${hour12} ${meridiem}`;
+  return String(hour12);
+}
+
+function formatMeridiem(date: Date): string {
+  return date.getHours() < 12 ? "AM" : "PM";
 }
 
 function formatMinute(date: Date): string {
@@ -587,8 +590,10 @@ export function Portfolio({ ecoMode, onToggleEcoMode }: PortfolioProps) {
               <div className="tb-tray">
                 <div className="tb-clock mono">
                   <div className="tb-date">{formatDate(now)}</div>
+                  <div className="tb-clock-divider" aria-hidden="true"></div>
                   <div className="tb-time">
-                    <div className="tb-hour">{formatHourLabel(now)}</div>
+                    <div className="tb-hour">{formatHour12(now)}</div>
+                    <div className="tb-meridiem">{formatMeridiem(now)}</div>
                     <div className="tb-minute">{formatMinute(now)}</div>
                   </div>
                 </div>

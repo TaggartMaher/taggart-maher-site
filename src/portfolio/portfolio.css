@@ -391,18 +391,42 @@
   text-align: right;
   max-width: 14ch;
 }
+.portfolio .tb-clock-divider {
+  width: 1px;
+  height: 38px;
+  background: rgba(255, 255, 255, 0.15);
+}
+/* Two-column grid: hour and minute stack in column 1 (right-edge
+   aligned to each other, tabular-nums keeps the digit columns even);
+   meridiem sits in its own column 2, row 1 next to the hour, so its
+   width can never push the hour/minute alignment off. */
 .portfolio .tb-time {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
+  display: grid;
+  grid-template-columns: auto auto;
+  column-gap: 5px;
   font-size: 19.5px;
   font-weight: 500;
   color: var(--fg);
   font-variant-numeric: tabular-nums;
-}
-.portfolio .tb-hour,
-.portfolio .tb-minute {
   line-height: 1;
+}
+.portfolio .tb-hour {
+  grid-column: 1;
+  grid-row: 1;
+  text-align: right;
+}
+.portfolio .tb-minute {
+  grid-column: 1;
+  grid-row: 2;
+  text-align: right;
+}
+.portfolio .tb-meridiem {
+  grid-column: 2;
+  grid-row: 1;
+  align-self: end;
+  font-size: 0.65em;
+  letter-spacing: 0.06em;
+  color: var(--fg-2);
 }
 
 /* ── Launcher ───────────────────────────────────────────────────── */
