@@ -81,7 +81,7 @@ export function DebugMenu({ settings, onChange, perfMetricsRef }: DebugMenuProps
             className="debug-menu-control"
             type="range"
             min={0}
-            max={512}
+            max={32}
             step={1}
             value={settings.screenBlurRadiusPx}
             onChange={(event) =>
@@ -357,7 +357,7 @@ export function DebugMenu({ settings, onChange, perfMetricsRef }: DebugMenuProps
                 className="debug-menu-control"
                 type="range"
                 min={0}
-                max={512}
+                max={32}
                 step={1}
                 value={settings.coffeeSteamScreenBlurRadiusPx}
                 onChange={(event) =>

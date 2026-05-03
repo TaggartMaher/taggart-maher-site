@@ -187,17 +187,7 @@ async function renderHtmlElementToCanvas(
   // and stretching to the texture canvas reproduces what the user sees
   // on the page — no scaling artifacts even when the SVG is rendered
   // at the larger inner size.
-  context.drawImage(
-    image,
-    0,
-    0,
-    visibleWidth,
-    visibleHeight,
-    0,
-    0,
-    canvas.width,
-    canvas.height,
-  );
+  context.drawImage(image, 0, 0, visibleWidth, visibleHeight, 0, 0, canvas.width, canvas.height);
 }
 
 export function ScreenOverlay({
