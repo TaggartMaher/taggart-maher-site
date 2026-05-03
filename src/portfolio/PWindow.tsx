@@ -123,15 +123,34 @@ function PWindowInner({
     if (event.button !== 0) return;
     event.preventDefault();
     onFocus(windowId);
-    if (maximized) return;
     event.currentTarget.setPointerCapture(event.pointerId);
     const scale = readViewportScale(event.currentTarget);
+    // Dragging a maximized window restores it to its pre-maximize size,
+    // pinned under the cursor — same gesture Windows/macOS use to undock
+    // a snapped window. width/height are preserved on the WindowState
+    // even while maximized, so we just clear the flag and reposition.
+    let dragStartWindowX = positionX;
+    let dragStartWindowY = positionY;
+    if (maximized) {
+      const portfolioContainer = (event.currentTarget as HTMLElement).closest(
+        ".portfolio",
+      ) as HTMLElement | null;
+      if (portfolioContainer) {
+        const projectedRect = portfolioContainer.getBoundingClientRect();
+        const cursorNaturalX = (event.clientX - projectedRect.left) / scale.x;
+        const cursorNaturalY = (event.clientY - projectedRect.top) / scale.y;
+        dragStartWindowX = Math.max(0, cursorNaturalX - width / 2);
+        dragStartWindowY = Math.max(0, cursorNaturalY - TITLEBAR_HEIGHT / 2);
+        onMaximize(windowId);
+        onMove(windowId, dragStartWindowX, dragStartWindowY);
+      }
+    }
     dragRef.current = {
       pointerId: event.pointerId,
       startMouseX: event.clientX,
       startMouseY: event.clientY,
-      startWindowX: positionX,
-      startWindowY: positionY,
+      startWindowX: dragStartWindowX,
+      startWindowY: dragStartWindowY,
       startWidth: width,
       startHeight: height,
       viewportScaleX: scale.x,
