@@ -6,8 +6,10 @@ import {
   useRef,
   useState,
   type ComponentType,
+  type ReactNode,
 } from "react";
 import "./portfolio.css";
+import { Icon } from "./Icon";
 import { PWindow } from "./PWindow";
 import {
   AboutApp,
@@ -38,7 +40,7 @@ const REFERENCE_CONTAINER_WIDTH = 1600;
 
 interface AppMeta {
   title: string;
-  icon: string;
+  icon: ReactNode;
   defaultWidth: number;
   defaultHeight: number;
   Component: ComponentType;
@@ -47,63 +49,63 @@ interface AppMeta {
 const APPS: Record<AppId, AppMeta> = {
   home: {
     title: "Home — File Manager",
-    icon: "📁",
+    icon: <Icon name="folder" />,
     defaultWidth: 880,
     defaultHeight: 560,
     Component: HomeApp,
   },
   about: {
     title: "About Me — Document",
-    icon: "👤",
+    icon: <Icon name="person" />,
     defaultWidth: 960,
     defaultHeight: 800,
     Component: AboutApp,
   },
   experience: {
     title: "Experience — Document",
-    icon: "📅",
+    icon: <Icon name="brain" />,
     defaultWidth: 1010,
     defaultHeight: 770,
     Component: ExperienceApp,
   },
   projects: {
     title: "Projects — Browser",
-    icon: "🛠",
+    icon: <Icon name="wrench" />,
     defaultWidth: 1300,
     defaultHeight: 825,
     Component: ProjectsApp,
   },
   blog: {
     title: "Blog — Reader",
-    icon: "📝",
+    icon: <Icon name="pencil" />,
     defaultWidth: 960,
     defaultHeight: 800,
     Component: BlogApp,
   },
   mystery: {
     title: "Mystery — CLASSIFIED",
-    icon: "🔒",
+    icon: <Icon name="lock" />,
     defaultWidth: 960,
     defaultHeight: 745,
     Component: MysteryApp,
   },
   readme: {
     title: "README.md — Editor",
-    icon: "📄",
+    icon: <Icon name="document" />,
     defaultWidth: 930,
     defaultHeight: 745,
     Component: ReadmeApp,
   },
   contact: {
     title: "Contact",
-    icon: "✉",
+    icon: <Icon name="envelope" />,
     defaultWidth: 745,
     defaultHeight: 640,
     Component: ContactApp,
   },
   settings: {
     title: "Site Settings",
-    icon: "⚙",
+    icon: <Icon name="gear" />,
     defaultWidth: 880,
     defaultHeight: 760,
     Component: SettingsApp,
@@ -129,14 +131,14 @@ interface OpenAppOverride {
   height?: number;
 }
 
-const DESKTOP_ICONS: Array<{ id: AppId; label: string; icon: string }> = [
-  { id: "about", label: "About Me", icon: "👤" },
-  { id: "experience", label: "Experience", icon: "📅" },
-  { id: "projects", label: "Projects", icon: "🛠" },
-  { id: "blog", label: "Blog", icon: "📝" },
-  { id: "mystery", label: "Mystery", icon: "🔒" },
-  { id: "readme", label: "README.md", icon: "📄" },
-  { id: "contact", label: "Contact", icon: "✉" },
+const DESKTOP_ICONS: Array<{ id: AppId; label: string; icon: ReactNode }> = [
+  { id: "about", label: "About Me", icon: <Icon name="person" /> },
+  { id: "experience", label: "Experience", icon: <Icon name="brain" /> },
+  { id: "projects", label: "Projects", icon: <Icon name="wrench" /> },
+  { id: "blog", label: "Blog", icon: <Icon name="pencil" /> },
+  { id: "mystery", label: "Mystery", icon: <Icon name="lock" /> },
+  { id: "readme", label: "README.md", icon: <Icon name="document" /> },
+  { id: "contact", label: "Contact", icon: <Icon name="envelope" /> },
 ];
 
 // Apps shown in the launcher grid. Settings is intentionally absent —
@@ -503,7 +505,9 @@ export function Portfolio({ ecoMode, onToggleEcoMode }: PortfolioProps) {
                         </button>
                       ))}
                     <button className="launcher-item" onClick={() => openApp("home")}>
-                      <div className="li-ico">📁</div>
+                      <div className="li-ico">
+                        <Icon name="folder" />
+                      </div>
                       <div className="li-name">Home</div>
                     </button>
                   </div>
@@ -569,7 +573,7 @@ export function Portfolio({ ecoMode, onToggleEcoMode }: PortfolioProps) {
                   }
                   onClick={onToggleEcoMode}
                 >
-                  🌿 {ecoMode ? "DISABLE ECO MODE" : "ECO MODE"}
+                  <Icon name="leaf" /> {ecoMode ? "DISABLE ECO MODE" : "ECO MODE"}
                 </button>
                 <button
                   type="button"
@@ -577,7 +581,7 @@ export function Portfolio({ ecoMode, onToggleEcoMode }: PortfolioProps) {
                   title="Choose how this site is rendered."
                   onClick={() => openApp("settings")}
                 >
-                  ⚙ Site Settings
+                  <Icon name="gear" /> Site Settings
                 </button>
               </div>
               <div className="tb-tray">

@@ -13,7 +13,7 @@ export interface PWindowProps {
   // during a drag (each render produces fresh inline arrows).
   windowId: string;
   title: string;
-  icon: string;
+  icon: ReactNode;
   positionX: number;
   positionY: number;
   width: number;
