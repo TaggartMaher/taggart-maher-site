@@ -311,11 +311,11 @@
   background: rgba(255, 255, 255, 0.08);
   color: var(--fg);
 }
-.portfolio .tb-mode-button.tb-lightweight {
+.portfolio .tb-mode-button.tb-eco {
   border-color: rgba(126, 166, 118, 0.5);
   color: #b6d6ad;
 }
-.portfolio .tb-mode-button.tb-lightweight:hover {
+.portfolio .tb-mode-button.tb-eco:hover {
   background: rgba(126, 166, 118, 0.18);
   color: #d6f0cc;
 }

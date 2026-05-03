@@ -7,7 +7,7 @@ describe("Portfolio", () => {
   it("renders the desktop chrome with branding, taskbar, and section icons", () => {
     const markup = renderToStaticMarkup(
       <Router>
-        <Portfolio />
+        <Portfolio ecoMode={false} onToggleEcoMode={() => {}} />
       </Router>,
     );
 
@@ -20,7 +20,7 @@ describe("Portfolio", () => {
     expect(markup).toContain("Mystery");
     expect(markup).toContain("README.md");
     expect(markup).toContain("Contact");
-    expect(markup).toContain("LIGHTWEIGHT MODE");
+    expect(markup).toContain("ECO MODE");
     expect(markup).toContain("Site Settings");
   });
 });

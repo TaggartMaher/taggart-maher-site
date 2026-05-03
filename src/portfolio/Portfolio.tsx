@@ -158,7 +158,15 @@ function formatDate(date: Date): string {
   });
 }
 
-export function Portfolio() {
+interface PortfolioProps {
+  // Reflects the user's eco-mode debug setting. The taskbar toggle
+  // button reads this for its label and calls back through
+  // `onToggleEcoMode` to flip it.
+  ecoMode: boolean;
+  onToggleEcoMode: () => void;
+}
+
+export function Portfolio({ ecoMode, onToggleEcoMode }: PortfolioProps) {
   const router = useRouter();
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
@@ -401,10 +409,6 @@ export function Portfolio() {
     [projectsSelectedId, blogSelectedId],
   );
 
-  function switchToLightweightMode(): void {
-    window.location.assign(window.location.pathname + "?mode=lightweight");
-  }
-
   const windowOpener = useMemo(() => ({ openApp }), [openApp]);
 
   return (
@@ -554,11 +558,13 @@ export function Portfolio() {
               <div className="tb-mode-buttons">
                 <button
                   type="button"
-                  className="tb-mode-button tb-lightweight mono"
-                  title="Switch to a simpler interface inside the same scene."
-                  onClick={switchToLightweightMode}
+                  className="tb-mode-button tb-eco mono"
+                  title={
+                    ecoMode ? "Restore full-quality rendering." : "Reduce GPU and bandwidth use."
+                  }
+                  onClick={onToggleEcoMode}
                 >
-                  🌿 LIGHTWEIGHT MODE
+                  🌿 {ecoMode ? "DISABLE ECO MODE" : "ECO MODE"}
                 </button>
                 <button
                   type="button"

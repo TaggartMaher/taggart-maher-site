@@ -32,6 +32,9 @@ export function FullEntry({ modeReason }: FullEntryProps) {
   // download we never intend to make.
   const steamMounted = !debugSettings.ecoMode && debugSettings.coffeeSteamEnabled;
   const requiredAssets = useMemo(() => getLoadableAssets(steamMounted), [steamMounted]);
+  function handleToggleEcoMode(): void {
+    setDebugSettings((previous) => ({ ...previous, ecoMode: !previous.ecoMode }));
+  }
 
   return (
     <ModeProvider modeReason={modeReason}>
@@ -59,7 +62,7 @@ export function FullEntry({ modeReason }: FullEntryProps) {
             textureRevisionRef={screenSourceRevisionRef}
             perfMetricsRef={perfMetricsRef}
           >
-            <Portfolio />
+            <Portfolio ecoMode={debugSettings.ecoMode} onToggleEcoMode={handleToggleEcoMode} />
           </ScreenOverlay>
           {steamMounted && (
             <SteamCompositor
