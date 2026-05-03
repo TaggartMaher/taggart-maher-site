@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 export type IconName =
   | "folder"
   | "person"
-  | "brain"
+  | "list"
   | "wrench"
   | "pencil"
   | "lock"
@@ -20,8 +20,15 @@ const ICON_PATHS: Record<IconName, ReactNode> = {
   person: (
     <path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zm0 2c-4.42 0-8 2.69-8 6v2h16v-2c0-3.31-3.58-6-8-6z" />
   ),
-  brain: (
-    <path d="M9 4a4 4 0 0 0-3.74 5.42A4 4 0 0 0 6 17a4 4 0 0 0 6-1.5V4.5A.5.5 0 0 0 11.5 4zM15 4a.5.5 0 0 0-.5.5v11A4 4 0 0 0 18 17a4 4 0 0 0 .74-7.58A4 4 0 0 0 15 4z" />
+  list: (
+    <>
+      <circle cx="5" cy="6" r="1.6" />
+      <rect x="9" y="5" width="12" height="2" rx="1" />
+      <circle cx="5" cy="12" r="1.6" />
+      <rect x="9" y="11" width="12" height="2" rx="1" />
+      <circle cx="5" cy="18" r="1.6" />
+      <rect x="9" y="17" width="12" height="2" rx="1" />
+    </>
   ),
   wrench: (
     <path d="M14.7 6.3a4 4 0 0 0-5.4 5.4l-6 6a2 2 0 0 0 2.83 2.83l6-6a4 4 0 0 0 5.4-5.4l-2.4 2.4-2.83-2.82z" />

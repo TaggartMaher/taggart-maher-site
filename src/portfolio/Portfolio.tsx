@@ -63,7 +63,7 @@ const APPS: Record<AppId, AppMeta> = {
   },
   experience: {
     title: "Experience — Document",
-    icon: <Icon name="brain" />,
+    icon: <Icon name="list" />,
     defaultWidth: 1010,
     defaultHeight: 770,
     Component: ExperienceApp,
@@ -133,7 +133,7 @@ interface OpenAppOverride {
 
 const DESKTOP_ICONS: Array<{ id: AppId; label: string; icon: ReactNode }> = [
   { id: "about", label: "About Me", icon: <Icon name="person" /> },
-  { id: "experience", label: "Experience", icon: <Icon name="brain" /> },
+  { id: "experience", label: "Experience", icon: <Icon name="list" /> },
   { id: "projects", label: "Projects", icon: <Icon name="wrench" /> },
   { id: "blog", label: "Blog", icon: <Icon name="pencil" /> },
   { id: "mystery", label: "Mystery", icon: <Icon name="lock" /> },

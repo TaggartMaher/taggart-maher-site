@@ -144,7 +144,7 @@ function Sidebar({ active }: SidebarProps) {
   const places: Array<{ id: AppId; icon: ReactNode; label: string }> = [
     { id: "home", icon: <Icon name="house" />, label: "Home" },
     { id: "about", icon: <Icon name="person" />, label: "About Me" },
-    { id: "experience", icon: <Icon name="brain" />, label: "Experience" },
+    { id: "experience", icon: <Icon name="list" />, label: "Experience" },
     { id: "projects", icon: <Icon name="wrench" />, label: "Projects" },
     { id: "blog", icon: <Icon name="pencil" />, label: "Blog" },
     { id: "mystery", icon: <Icon name="lock" />, label: "Mystery" },
@@ -192,7 +192,7 @@ export function HomeApp() {
     classified?: boolean;
   }> = [
     { id: "about", icon: <Icon name="person" />, label: "About Me", sub: "who I am" },
-    { id: "experience", icon: <Icon name="brain" />, label: "Experience", sub: "where I've been" },
+    { id: "experience", icon: <Icon name="list" />, label: "Experience", sub: "where I've been" },
     { id: "projects", icon: <Icon name="wrench" />, label: "Projects", sub: "what I've built" },
     { id: "blog", icon: <Icon name="pencil" />, label: "Blog", sub: "things I wrote" },
     {
