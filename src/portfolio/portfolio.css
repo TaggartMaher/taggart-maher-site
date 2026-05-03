@@ -2,6 +2,8 @@
    .portfolio so it doesn't leak out of the screen-rect overlay. */
 
 .portfolio {
+  container-type: size;
+  container-name: portfolio;
   --bg: #1d2027;
   --bg-2: #161920;
   --panel: #23262e;
@@ -74,27 +76,71 @@
 
 /* ── Wallpaper ──────────────────────────────────────────────────── */
 
+/* Wallpaper orbs orbit around the screen center: each orb sits inside
+   a zero-sized .wp-orbit anchor at the container's centerpoint, the
+   anchor rotates slowly, and the orb itself breathes radially on a
+   different period — together they read as two planets dancing on
+   intersecting spirals. cqw/cqh keep the orbit radius proportional
+   to the actual portfolio container, since .portfolio lives inside
+   the screen-rect overlay (no fixed viewport relation). */
+.portfolio .wp-orbit {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+.portfolio .wp-orbit-1 {
+  animation: portfolio-wp-orbit 90s linear infinite;
+}
+.portfolio .wp-orbit-2 {
+  animation: portfolio-wp-orbit 110s linear infinite reverse;
+}
+@keyframes portfolio-wp-orbit {
+  to {
+    transform: rotate(360deg);
+  }
+}
 .portfolio .wp-orb {
   position: absolute;
   border-radius: 50%;
   filter: blur(80px);
   pointer-events: none;
-  opacity: 0.5;
 }
 .portfolio .wp-orb-1 {
   width: 600px;
   height: 600px;
   background: hsl(var(--wp-hue) 80% 50%);
-  top: -200px;
-  right: -150px;
+  left: -300px;
+  top: -300px;
+  opacity: 0.5;
+  animation: portfolio-wp-spiral-1 42s ease-in-out infinite alternate;
+}
+@keyframes portfolio-wp-spiral-1 {
+  from {
+    transform: translate(48cqw, -48cqh);
+  }
+  to {
+    transform: translate(36cqw, -34cqh);
+  }
 }
 .portfolio .wp-orb-2 {
   width: 500px;
   height: 500px;
   background: hsl(calc(var(--wp-hue) + 40) 70% 45%);
-  bottom: -200px;
-  left: -100px;
+  left: -250px;
+  top: -250px;
   opacity: 0.3;
+  animation: portfolio-wp-spiral-2 56s ease-in-out infinite alternate;
+}
+@keyframes portfolio-wp-spiral-2 {
+  from {
+    transform: translate(-46cqw, 46cqh);
+  }
+  to {
+    transform: translate(-32cqw, 34cqh);
+  }
 }
 
 /* ── Desktop icons ──────────────────────────────────────────────── */

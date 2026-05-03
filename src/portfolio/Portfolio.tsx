@@ -421,8 +421,12 @@ export function Portfolio({ ecoMode, onToggleEcoMode }: PortfolioProps) {
       <SelectionProvider state={selectionState}>
         <InternalLinkProvider onNavigate={handleInternalNavigate}>
           <div className="portfolio" ref={containerRef}>
-            <div className="wp-orb wp-orb-1"></div>
-            <div className="wp-orb wp-orb-2"></div>
+            <div className="wp-orbit wp-orbit-1">
+              <div className="wp-orb wp-orb-1"></div>
+            </div>
+            <div className="wp-orbit wp-orbit-2">
+              <div className="wp-orb wp-orb-2"></div>
+            </div>
 
             <div className="desk-icons">
               {DESKTOP_ICONS.map((item) => (
