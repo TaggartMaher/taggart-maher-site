@@ -2,6 +2,8 @@
    .portfolio so it doesn't leak out of the screen-rect overlay. */
 
 .portfolio {
+  container-type: size;
+  container-name: portfolio;
   --bg: #1d2027;
   --bg-2: #161920;
   --panel: #23262e;
@@ -74,27 +76,71 @@
 
 /* ── Wallpaper ──────────────────────────────────────────────────── */
 
+/* Wallpaper orbs orbit around the screen center: each orb sits inside
+   a zero-sized .wp-orbit anchor at the container's centerpoint, the
+   anchor rotates slowly, and the orb itself breathes radially on a
+   different period — together they read as two planets dancing on
+   intersecting spirals. cqw/cqh keep the orbit radius proportional
+   to the actual portfolio container, since .portfolio lives inside
+   the screen-rect overlay (no fixed viewport relation). */
+.portfolio .wp-orbit {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+.portfolio .wp-orbit-1 {
+  animation: portfolio-wp-orbit 90s linear infinite;
+}
+.portfolio .wp-orbit-2 {
+  animation: portfolio-wp-orbit 110s linear infinite reverse;
+}
+@keyframes portfolio-wp-orbit {
+  to {
+    transform: rotate(360deg);
+  }
+}
 .portfolio .wp-orb {
   position: absolute;
   border-radius: 50%;
   filter: blur(80px);
   pointer-events: none;
-  opacity: 0.5;
 }
 .portfolio .wp-orb-1 {
   width: 600px;
   height: 600px;
   background: hsl(var(--wp-hue) 80% 50%);
-  top: -200px;
-  right: -150px;
+  left: -300px;
+  top: -300px;
+  opacity: 0.5;
+  animation: portfolio-wp-spiral-1 42s ease-in-out infinite alternate;
+}
+@keyframes portfolio-wp-spiral-1 {
+  from {
+    transform: translate(48cqw, -48cqh);
+  }
+  to {
+    transform: translate(36cqw, -34cqh);
+  }
 }
 .portfolio .wp-orb-2 {
   width: 500px;
   height: 500px;
   background: hsl(calc(var(--wp-hue) + 40) 70% 45%);
-  bottom: -200px;
-  left: -100px;
+  left: -250px;
+  top: -250px;
   opacity: 0.3;
+  animation: portfolio-wp-spiral-2 56s ease-in-out infinite alternate;
+}
+@keyframes portfolio-wp-spiral-2 {
+  from {
+    transform: translate(-46cqw, 46cqh);
+  }
+  to {
+    transform: translate(-32cqw, 34cqh);
+  }
 }
 
 /* ── Desktop icons ──────────────────────────────────────────────── */
@@ -136,6 +182,8 @@
 .portfolio .di-ico {
   font-size: 36px;
   line-height: 1;
+  display: grid;
+  place-items: center;
   filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.4));
 }
 .portfolio .di-label {
@@ -189,13 +237,13 @@
   left: 0;
   right: 0;
   bottom: 0;
-  height: 44px;
+  height: 56px;
   background: rgba(22, 25, 32, 0.78);
   backdrop-filter: blur(24px) saturate(160%);
   border-top: 1px solid rgba(255, 255, 255, 0.08);
   display: flex;
   align-items: stretch;
-  padding: 0 6px;
+  padding: 0 8px;
   z-index: 9999;
 }
 .portfolio .tb-launcher {
@@ -205,12 +253,12 @@
   color: var(--fg);
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 0 14px;
+  gap: 12px;
+  padding: 0 16px;
   cursor: pointer;
   border-radius: 6px;
-  margin: 4px 0;
-  font-size: 31.25px;
+  margin: 6px 0;
+  font-size: 35px;
   font-weight: 500;
   transition: 0.1s;
 }
@@ -223,12 +271,12 @@
 }
 .portfolio .tb-launch-ico {
   display: grid;
-  grid-template-columns: repeat(3, 4px);
-  gap: 2px;
+  grid-template-columns: repeat(3, 5px);
+  gap: 3px;
 }
 .portfolio .tb-launch-ico .dot {
-  width: 4px;
-  height: 4px;
+  width: 5px;
+  height: 5px;
   background: currentColor;
   border-radius: 1px;
 }
@@ -259,11 +307,11 @@
   align-items: center;
   justify-content: center;
   gap: 0;
-  padding: 0 10px;
+  padding: 0 12px;
   cursor: pointer;
   border-radius: 5px 5px 0 0;
-  max-width: 56px;
-  min-width: 56px;
+  max-width: 68px;
+  min-width: 68px;
   flex-shrink: 0;
   transition: 0.1s;
 }
@@ -280,7 +328,10 @@
   opacity: 0.55;
 }
 .portfolio .tb-task-ico {
-  font-size: 24px;
+  font-size: 30px;
+  display: grid;
+  place-items: center;
+  line-height: 1;
 }
 .portfolio .tb-task-label {
   display: none;
@@ -296,12 +347,15 @@
   background: rgba(255, 255, 255, 0.04);
   border: 1px solid var(--border-soft);
   color: var(--fg-2);
-  padding: 6px 12px;
-  font-size: 27.5px;
+  padding: 8px 14px;
+  font-size: 30.5px;
   cursor: pointer;
   border-radius: 4px;
   letter-spacing: 0.04em;
   transition: 0.1s;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 .portfolio .tb-mode-button:hover {
   background: rgba(255, 255, 255, 0.08);
@@ -323,30 +377,56 @@
   border-left: 1px solid rgba(255, 255, 255, 0.08);
   margin-left: 6px;
 }
-.portfolio .tray-icons {
-  display: flex;
-  gap: 8px;
-  color: var(--fg-3);
-  font-size: 11px;
-}
-.portfolio .tray-icons span {
-  cursor: default;
-}
 .portfolio .tb-clock {
-  text-align: right;
-  line-height: 1.1;
+  display: flex;
+  align-items: center;
+  gap: 12px;
   color: var(--fg-2);
   cursor: default;
+  line-height: 1.05;
 }
+.portfolio .tb-date {
+  font-size: 26.25px;
+  color: var(--fg-2);
+  text-align: right;
+  max-width: 14ch;
+}
+.portfolio .tb-clock-divider {
+  width: 1px;
+  height: 38px;
+  background: rgba(255, 255, 255, 0.15);
+}
+/* Two-column grid: hour and minute stack in column 1 (right-edge
+   aligned to each other, tabular-nums keeps the digit columns even);
+   meridiem sits in its own column 2, row 1 next to the hour, so its
+   width can never push the hour/minute alignment off. */
 .portfolio .tb-time {
-  font-size: 13px;
+  display: grid;
+  grid-template-columns: auto auto;
+  column-gap: 5px;
+  font-size: 19.5px;
   font-weight: 500;
   color: var(--fg);
   font-variant-numeric: tabular-nums;
+  line-height: 1;
 }
-.portfolio .tb-date {
-  font-size: 10.5px;
-  color: var(--fg-3);
+.portfolio .tb-hour {
+  grid-column: 1;
+  grid-row: 1;
+  text-align: right;
+}
+.portfolio .tb-minute {
+  grid-column: 1;
+  grid-row: 2;
+  text-align: right;
+}
+.portfolio .tb-meridiem {
+  grid-column: 2;
+  grid-row: 1;
+  align-self: end;
+  font-size: 0.78em;
+  letter-spacing: 0.06em;
+  color: var(--fg-2);
 }
 
 /* ── Launcher ───────────────────────────────────────────────────── */
@@ -359,7 +439,7 @@
 .portfolio .launcher {
   position: absolute;
   left: 8px;
-  bottom: 48px;
+  bottom: 60px;
   width: 600px;
   background: rgba(35, 38, 46, 0.94);
   backdrop-filter: blur(24px) saturate(160%);
@@ -399,20 +479,6 @@
   font-size: 27.5px;
   color: var(--fg-3);
 }
-.portfolio .launcher-search {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  background: rgba(0, 0, 0, 0.3);
-  border: 1px solid var(--border-soft);
-  border-radius: 6px;
-  padding: 6px 10px;
-  color: var(--fg-3);
-  font-size: 30px;
-}
-.portfolio .ls-prefix {
-  color: var(--fg-3);
-}
 .portfolio .launcher-section {
   font-size: 12.5px;
   letter-spacing: 0.14em;
@@ -443,6 +509,8 @@
 }
 .portfolio .li-ico {
   font-size: 26px;
+  display: grid;
+  place-items: center;
   filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.3));
 }
 .portfolio .li-name {
@@ -512,8 +580,10 @@
   min-width: 0;
 }
 .portfolio .pwin-icon {
-  font-size: 14px;
+  font-size: 16px;
   line-height: 1;
+  display: inline-flex;
+  align-items: center;
 }
 .portfolio .pwin-title {
   font-size: 15.625px;
@@ -651,10 +721,10 @@
   min-height: 0;
 }
 .portfolio .sidebar {
-  width: 170px;
+  width: 230px;
   background: var(--bg-2);
   border-right: 1px solid var(--border-soft);
-  padding: 10px 6px;
+  padding: 12px 8px;
   display: flex;
   flex-direction: column;
   gap: 1px;
@@ -691,11 +761,13 @@
   color: var(--accent);
 }
 .portfolio .sb-icon {
-  font-size: 14px;
+  font-size: 22px;
+  display: inline-grid;
+  place-items: center;
 }
 .portfolio .dol-grid {
   flex: 1;
-  padding: 18px;
+  padding: 12px;
   display: grid;
   grid-template-columns: repeat(auto-fill, 140px);
   gap: 10px;
@@ -733,6 +805,8 @@
 .portfolio .dol-ico {
   font-size: 42px;
   line-height: 1;
+  display: grid;
+  place-items: center;
 }
 .portfolio .dol-name {
   font-size: 31.25px;
@@ -763,7 +837,7 @@
   height: 100%;
 }
 .portfolio .doc-pad {
-  padding: 28px 36px 40px;
+  padding: 18px 22px 28px;
   overflow-y: auto;
   flex: 1;
 }
@@ -1181,7 +1255,7 @@
   border-bottom: 1px solid var(--border-soft);
 }
 .portfolio .detail-pad {
-  padding: 20px 24px 28px;
+  padding: 14px 18px 20px;
 }
 .portfolio .detail-meta {
   font-size: 13.125px;

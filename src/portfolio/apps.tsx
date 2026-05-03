@@ -4,6 +4,7 @@ import { PROJECTS } from "./content/projects";
 import { BLOG_POSTS } from "./content/blog";
 import { Markdown } from "./content/Markdown";
 import { README_MARKDOWN } from "./content/readme";
+import { Icon } from "./Icon";
 import { SettingsView } from "../settings/SettingsView";
 import { CopyLinkButton } from "../shared/CopyLinkButton";
 
@@ -140,13 +141,13 @@ interface SidebarProps {
 
 function Sidebar({ active }: SidebarProps) {
   const openApp = useOpenApp();
-  const places: Array<{ id: AppId; icon: string; label: string }> = [
-    { id: "home", icon: "🏠", label: "Home" },
-    { id: "about", icon: "👤", label: "About Me" },
-    { id: "experience", icon: "📅", label: "Experience" },
-    { id: "projects", icon: "🛠", label: "Projects" },
-    { id: "blog", icon: "📝", label: "Blog" },
-    { id: "mystery", icon: "🔒", label: "Mystery" },
+  const places: Array<{ id: AppId; icon: ReactNode; label: string }> = [
+    { id: "home", icon: <Icon name="house" />, label: "Home" },
+    { id: "about", icon: <Icon name="person" />, label: "About Me" },
+    { id: "experience", icon: <Icon name="list" />, label: "Experience" },
+    { id: "projects", icon: <Icon name="wrench" />, label: "Projects" },
+    { id: "blog", icon: <Icon name="pencil" />, label: "Blog" },
+    { id: "mystery", icon: <Icon name="lock" />, label: "Mystery" },
   ];
   return (
     <aside className="sidebar">
@@ -185,18 +186,24 @@ export function HomeApp() {
   const openApp = useOpenApp();
   const items: Array<{
     id: AppId;
-    icon: string;
+    icon: ReactNode;
     label: string;
     sub: string;
     classified?: boolean;
   }> = [
-    { id: "about", icon: "👤", label: "About Me", sub: "who I am" },
-    { id: "experience", icon: "📅", label: "Experience", sub: "where I've been" },
-    { id: "projects", icon: "🛠", label: "Projects", sub: "what I've built" },
-    { id: "blog", icon: "📝", label: "Blog", sub: "things I wrote" },
-    { id: "mystery", icon: "🔒", label: "Mystery", sub: "in development", classified: true },
-    { id: "readme", icon: "📄", label: "README.md", sub: "start here" },
-    { id: "contact", icon: "✉", label: "Contact", sub: "reach out" },
+    { id: "about", icon: <Icon name="person" />, label: "About Me", sub: "who I am" },
+    { id: "experience", icon: <Icon name="list" />, label: "Experience", sub: "where I've been" },
+    { id: "projects", icon: <Icon name="wrench" />, label: "Projects", sub: "what I've built" },
+    { id: "blog", icon: <Icon name="pencil" />, label: "Blog", sub: "things I wrote" },
+    {
+      id: "mystery",
+      icon: <Icon name="lock" />,
+      label: "Mystery",
+      sub: "in development",
+      classified: true,
+    },
+    { id: "readme", icon: <Icon name="document" />, label: "README.md", sub: "start here" },
+    { id: "contact", icon: <Icon name="envelope" />, label: "Contact", sub: "reach out" },
   ];
   const [selectedId, setSelectedId] = useState<AppId | null>(null);
   const selected = selectedId ? items.find((item) => item.id === selectedId) : null;

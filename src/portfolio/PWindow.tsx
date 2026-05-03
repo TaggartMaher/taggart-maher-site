@@ -1,6 +1,6 @@
 import { memo, useEffect, useRef, type ReactNode } from "react";
 
-const TASKBAR_HEIGHT = 44;
+const TASKBAR_HEIGHT = 56;
 const TITLEBAR_HEIGHT = 32;
 const MIN_WIDTH = 360;
 const MIN_HEIGHT = 280;
@@ -13,7 +13,7 @@ export interface PWindowProps {
   // during a drag (each render produces fresh inline arrows).
   windowId: string;
   title: string;
-  icon: string;
+  icon: ReactNode;
   positionX: number;
   positionY: number;
   width: number;
@@ -113,19 +113,44 @@ function PWindowInner({
   }, []);
 
   function handleTitleBarPointerDown(event: React.PointerEvent<HTMLDivElement>): void {
-    if (maximized) return;
+    // Window control buttons (close/min/max) live inside the title bar.
+    // Without this guard, the title bar's setPointerCapture below would
+    // steal subsequent pointer events from the button, preventing its
+    // click from ever firing.
+    const eventTarget = event.target as HTMLElement;
+    if (eventTarget.closest(".pwin-btn")) return;
     // Only react to the primary button on mouse, ignore multi-touch.
     if (event.button !== 0) return;
     event.preventDefault();
     onFocus(windowId);
     event.currentTarget.setPointerCapture(event.pointerId);
     const scale = readViewportScale(event.currentTarget);
+    // Dragging a maximized window restores it to its pre-maximize size,
+    // pinned under the cursor — same gesture Windows/macOS use to undock
+    // a snapped window. width/height are preserved on the WindowState
+    // even while maximized, so we just clear the flag and reposition.
+    let dragStartWindowX = positionX;
+    let dragStartWindowY = positionY;
+    if (maximized) {
+      const portfolioContainer = (event.currentTarget as HTMLElement).closest(
+        ".portfolio",
+      ) as HTMLElement | null;
+      if (portfolioContainer) {
+        const projectedRect = portfolioContainer.getBoundingClientRect();
+        const cursorNaturalX = (event.clientX - projectedRect.left) / scale.x;
+        const cursorNaturalY = (event.clientY - projectedRect.top) / scale.y;
+        dragStartWindowX = Math.max(0, cursorNaturalX - width / 2);
+        dragStartWindowY = Math.max(0, cursorNaturalY - TITLEBAR_HEIGHT / 2);
+        onMaximize(windowId);
+        onMove(windowId, dragStartWindowX, dragStartWindowY);
+      }
+    }
     dragRef.current = {
       pointerId: event.pointerId,
       startMouseX: event.clientX,
       startMouseY: event.clientY,
-      startWindowX: positionX,
-      startWindowY: positionY,
+      startWindowX: dragStartWindowX,
+      startWindowY: dragStartWindowY,
       startWidth: width,
       startHeight: height,
       viewportScaleX: scale.x,

@@ -6,8 +6,10 @@ import {
   useRef,
   useState,
   type ComponentType,
+  type ReactNode,
 } from "react";
 import "./portfolio.css";
+import { Icon } from "./Icon";
 import { PWindow } from "./PWindow";
 import {
   AboutApp,
@@ -29,7 +31,7 @@ import { InternalLinkProvider } from "./content/Markdown";
 import { useRouter } from "../router/useRouter";
 import { pathForState, targetForPath, type DesktopRouterTarget } from "./useDesktopRouter";
 
-const TASKBAR_HEIGHT = 44;
+const TASKBAR_HEIGHT = 56;
 
 // Default window sizes from the design handoff. These are tuned for a
 // ~1600px-wide working area; we scale them to the actual container so the
@@ -38,7 +40,7 @@ const REFERENCE_CONTAINER_WIDTH = 1600;
 
 interface AppMeta {
   title: string;
-  icon: string;
+  icon: ReactNode;
   defaultWidth: number;
   defaultHeight: number;
   Component: ComponentType;
@@ -47,63 +49,63 @@ interface AppMeta {
 const APPS: Record<AppId, AppMeta> = {
   home: {
     title: "Home — File Manager",
-    icon: "📁",
+    icon: <Icon name="folder" />,
     defaultWidth: 880,
     defaultHeight: 560,
     Component: HomeApp,
   },
   about: {
     title: "About Me — Document",
-    icon: "👤",
+    icon: <Icon name="person" />,
     defaultWidth: 960,
     defaultHeight: 800,
     Component: AboutApp,
   },
   experience: {
     title: "Experience — Document",
-    icon: "📅",
+    icon: <Icon name="list" />,
     defaultWidth: 1010,
     defaultHeight: 770,
     Component: ExperienceApp,
   },
   projects: {
     title: "Projects — Browser",
-    icon: "🛠",
+    icon: <Icon name="wrench" />,
     defaultWidth: 1300,
     defaultHeight: 825,
     Component: ProjectsApp,
   },
   blog: {
     title: "Blog — Reader",
-    icon: "📝",
+    icon: <Icon name="pencil" />,
     defaultWidth: 960,
     defaultHeight: 800,
     Component: BlogApp,
   },
   mystery: {
     title: "Mystery — CLASSIFIED",
-    icon: "🔒",
+    icon: <Icon name="lock" />,
     defaultWidth: 960,
     defaultHeight: 745,
     Component: MysteryApp,
   },
   readme: {
     title: "README.md — Editor",
-    icon: "📄",
+    icon: <Icon name="document" />,
     defaultWidth: 930,
     defaultHeight: 745,
     Component: ReadmeApp,
   },
   contact: {
     title: "Contact",
-    icon: "✉",
+    icon: <Icon name="envelope" />,
     defaultWidth: 745,
     defaultHeight: 640,
     Component: ContactApp,
   },
   settings: {
     title: "Site Settings",
-    icon: "⚙",
+    icon: <Icon name="gear" />,
     defaultWidth: 880,
     defaultHeight: 760,
     Component: SettingsApp,
@@ -129,14 +131,14 @@ interface OpenAppOverride {
   height?: number;
 }
 
-const DESKTOP_ICONS: Array<{ id: AppId; label: string; icon: string }> = [
-  { id: "about", label: "About Me", icon: "👤" },
-  { id: "experience", label: "Experience", icon: "📅" },
-  { id: "projects", label: "Projects", icon: "🛠" },
-  { id: "blog", label: "Blog", icon: "📝" },
-  { id: "mystery", label: "Mystery", icon: "🔒" },
-  { id: "readme", label: "README.md", icon: "📄" },
-  { id: "contact", label: "Contact", icon: "✉" },
+const DESKTOP_ICONS: Array<{ id: AppId; label: string; icon: ReactNode }> = [
+  { id: "about", label: "About Me", icon: <Icon name="person" /> },
+  { id: "experience", label: "Experience", icon: <Icon name="list" /> },
+  { id: "projects", label: "Projects", icon: <Icon name="wrench" /> },
+  { id: "blog", label: "Blog", icon: <Icon name="pencil" /> },
+  { id: "mystery", label: "Mystery", icon: <Icon name="lock" /> },
+  { id: "readme", label: "README.md", icon: <Icon name="document" /> },
+  { id: "contact", label: "Contact", icon: <Icon name="envelope" /> },
 ];
 
 // Apps shown in the launcher grid. Settings is intentionally absent —
@@ -144,10 +146,18 @@ const DESKTOP_ICONS: Array<{ id: AppId; label: string; icon: string }> = [
 // README link, but doesn't sit in the launcher next to content apps.
 const LAUNCHER_EXCLUDED_APPS: ReadonlySet<AppId> = new Set(["home", "settings"]);
 
-function formatTime(date: Date): string {
-  const hours = String(date.getHours()).padStart(2, "0");
-  const minutes = String(date.getMinutes()).padStart(2, "0");
-  return `${hours}:${minutes}`;
+function formatHour12(date: Date): string {
+  const hour24 = date.getHours();
+  const hour12 = hour24 % 12 === 0 ? 12 : hour24 % 12;
+  return String(hour12);
+}
+
+function formatMeridiem(date: Date): string {
+  return date.getHours() < 12 ? "AM" : "PM";
+}
+
+function formatMinute(date: Date): string {
+  return String(date.getMinutes()).padStart(2, "0");
 }
 
 function formatDate(date: Date): string {
@@ -416,8 +426,12 @@ export function Portfolio({ ecoMode, onToggleEcoMode }: PortfolioProps) {
       <SelectionProvider state={selectionState}>
         <InternalLinkProvider onNavigate={handleInternalNavigate}>
           <div className="portfolio" ref={containerRef}>
-            <div className="wp-orb wp-orb-1"></div>
-            <div className="wp-orb wp-orb-2"></div>
+            <div className="wp-orbit wp-orbit-1">
+              <div className="wp-orb wp-orb-1"></div>
+            </div>
+            <div className="wp-orbit wp-orbit-2">
+              <div className="wp-orb wp-orb-2"></div>
+            </div>
 
             <div className="desk-icons">
               {DESKTOP_ICONS.map((item) => (
@@ -483,10 +497,6 @@ export function Portfolio({ ecoMode, onToggleEcoMode }: PortfolioProps) {
                       <div className="lh-sub mono">taggart@tm-portfolio</div>
                     </div>
                   </div>
-                  <div className="launcher-search mono">
-                    <span className="ls-prefix">⌕</span>
-                    <span className="ls-placeholder">type / pick / open ...</span>
-                  </div>
                   <div className="launcher-section mono">APPLICATIONS</div>
                   <div className="launcher-grid">
                     {(Object.entries(APPS) as Array<[AppId, AppMeta]>)
@@ -498,7 +508,9 @@ export function Portfolio({ ecoMode, onToggleEcoMode }: PortfolioProps) {
                         </button>
                       ))}
                     <button className="launcher-item" onClick={() => openApp("home")}>
-                      <div className="li-ico">📁</div>
+                      <div className="li-ico">
+                        <Icon name="folder" />
+                      </div>
                       <div className="li-name">Home</div>
                     </button>
                   </div>
@@ -564,7 +576,7 @@ export function Portfolio({ ecoMode, onToggleEcoMode }: PortfolioProps) {
                   }
                   onClick={onToggleEcoMode}
                 >
-                  🌿 {ecoMode ? "DISABLE ECO MODE" : "ECO MODE"}
+                  <Icon name="leaf" /> {ecoMode ? "DISABLE ECO MODE" : "ECO MODE"}
                 </button>
                 <button
                   type="button"
@@ -572,18 +584,18 @@ export function Portfolio({ ecoMode, onToggleEcoMode }: PortfolioProps) {
                   title="Choose how this site is rendered."
                   onClick={() => openApp("settings")}
                 >
-                  ⚙ Site Settings
+                  <Icon name="gear" /> Site Settings
                 </button>
               </div>
               <div className="tb-tray">
-                <div className="tray-icons mono">
-                  <span title="Notifications">●</span>
-                  <span title="Network">⌁</span>
-                  <span title="Battery">▮</span>
-                </div>
                 <div className="tb-clock mono">
-                  <div className="tb-time">{formatTime(now)}</div>
                   <div className="tb-date">{formatDate(now)}</div>
+                  <div className="tb-clock-divider" aria-hidden="true"></div>
+                  <div className="tb-time">
+                    <div className="tb-hour">{formatHour12(now)}</div>
+                    <div className="tb-meridiem">{formatMeridiem(now)}</div>
+                    <div className="tb-minute">{formatMinute(now)}</div>
+                  </div>
                 </div>
               </div>
             </div>
