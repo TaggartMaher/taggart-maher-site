@@ -144,10 +144,15 @@ const DESKTOP_ICONS: Array<{ id: AppId; label: string; icon: string }> = [
 // README link, but doesn't sit in the launcher next to content apps.
 const LAUNCHER_EXCLUDED_APPS: ReadonlySet<AppId> = new Set(["home", "settings"]);
 
-function formatTime(date: Date): string {
-  const hours = String(date.getHours()).padStart(2, "0");
-  const minutes = String(date.getMinutes()).padStart(2, "0");
-  return `${hours}:${minutes}`;
+function formatHourLabel(date: Date): string {
+  const hour24 = date.getHours();
+  const hour12 = hour24 % 12 === 0 ? 12 : hour24 % 12;
+  const meridiem = hour24 < 12 ? "AM" : "PM";
+  return `${hour12} ${meridiem}`;
+}
+
+function formatMinute(date: Date): string {
+  return String(date.getMinutes()).padStart(2, "0");
 }
 
 function formatDate(date: Date): string {
@@ -572,14 +577,12 @@ export function Portfolio({ ecoMode, onToggleEcoMode }: PortfolioProps) {
                 </button>
               </div>
               <div className="tb-tray">
-                <div className="tray-icons mono">
-                  <span title="Notifications">●</span>
-                  <span title="Network">⌁</span>
-                  <span title="Battery">▮</span>
-                </div>
                 <div className="tb-clock mono">
-                  <div className="tb-time">{formatTime(now)}</div>
                   <div className="tb-date">{formatDate(now)}</div>
+                  <div className="tb-time">
+                    <div className="tb-hour">{formatHourLabel(now)}</div>
+                    <div className="tb-minute">{formatMinute(now)}</div>
+                  </div>
                 </div>
               </div>
             </div>

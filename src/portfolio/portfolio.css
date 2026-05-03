@@ -323,30 +323,32 @@
   border-left: 1px solid rgba(255, 255, 255, 0.08);
   margin-left: 6px;
 }
-.portfolio .tray-icons {
-  display: flex;
-  gap: 8px;
-  color: var(--fg-3);
-  font-size: 11px;
-}
-.portfolio .tray-icons span {
-  cursor: default;
-}
 .portfolio .tb-clock {
-  text-align: right;
-  line-height: 1.1;
+  display: flex;
+  align-items: center;
+  gap: 12px;
   color: var(--fg-2);
   cursor: default;
+  line-height: 1.05;
+}
+.portfolio .tb-date {
+  font-size: 26.25px;
+  color: var(--fg-2);
+  text-align: right;
+  max-width: 14ch;
 }
 .portfolio .tb-time {
-  font-size: 13px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  font-size: 19.5px;
   font-weight: 500;
   color: var(--fg);
   font-variant-numeric: tabular-nums;
 }
-.portfolio .tb-date {
-  font-size: 10.5px;
-  color: var(--fg-3);
+.portfolio .tb-hour,
+.portfolio .tb-minute {
+  line-height: 1;
 }
 
 /* ── Launcher ───────────────────────────────────────────────────── */
