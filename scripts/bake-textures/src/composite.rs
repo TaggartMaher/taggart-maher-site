@@ -25,6 +25,14 @@ use serde::Deserialize;
 // is invariant under render_steam.sh's resolution boost.
 pub const POSITION_BLUR_SIGMA_PX: f32 = 4.0;
 
+// Pixels whose post-blur whitelight is below this fraction of the
+// image's peak whitelight are treated as off-screen and have their
+// U/V hard-zeroed. Cycles' residual sampling noise (even after
+// denoise) puts the dark-region whitelight well above any fixed
+// epsilon, so the threshold has to scale with the scene's own peak
+// to actually clip noise without erasing dim-but-real bounce.
+pub const WHITELIGHT_NOISE_FLOOR_FRACTION: f32 = 0.005;
+
 #[derive(Deserialize)]
 pub struct CellsManifest {
     #[serde(rename = "cellsPerSide")]
@@ -330,11 +338,20 @@ pub fn write_position_png_8bit(
 // EXRs. Reads each cell's `<prefix>_K.{R,G,B}` channels, integrates
 // against the manifest's (col_K, row_K), and divides by N · whitelight.
 // Output buffers are the same width/height as the input cell EXRs.
+//
+// `blur_sigma_px` smooths the (numerator, denominator) accumulators
+// before the per-pixel division. Blurring the ratio's components
+// instead of the ratio is what keeps low-whitelight regions clean:
+// the U/V ratio at a noisy near-zero pixel is meaningless on its own,
+// but its numerator and denominator share the same noise pattern, so
+// dividing after a co-blur preserves the recovered position without
+// smearing arbitrary noise into dark regions. Passing 0 disables.
 pub fn composite_cells(
     cell_paths: &[PathBuf],
     cell_grid: &[(i32, i32)],
     cells_per_side: usize,
     light_group_prefix: &str,
+    blur_sigma_px: f32,
 ) -> Result<PositionFields, Box<dyn std::error::Error>> {
     let cell_count = cells_per_side * cells_per_side;
     if cell_paths.len() != cell_count {
@@ -385,14 +402,34 @@ pub fn composite_cells(
         }
     }
 
+    if blur_sigma_px > 0.0 {
+        gaussian_blur_2d(&mut weighted_u, width, height, blur_sigma_px);
+        gaussian_blur_2d(&mut weighted_v, width, height, blur_sigma_px);
+        gaussian_blur_2d(&mut whitelight, width, height, blur_sigma_px);
+    }
+
+    // Dynamic noise floor: anything below a small fraction of the
+    // peak (post-blur) whitelight is treated as "no real bounce here"
+    // and zeroed out. The fixed 1e-6 absolute floor used previously
+    // is way below Cycles' residual sampling noise after denoise, so
+    // dark regions still divided small/small = arbitrary U/V. Scaling
+    // the threshold to the scene's own peak makes the cutoff
+    // exposure-invariant.
+    let peak_whitelight = whitelight
+        .iter()
+        .fold(0.0_f32, |accumulator, value| accumulator.max(*value));
+    let whitelight_threshold = (peak_whitelight * WHITELIGHT_NOISE_FLOOR_FRACTION).max(1e-6);
+
     let n = cells_per_side as f32;
     let mut position_u = vec![0.0_f32; pixel_count];
     let mut position_v = vec![0.0_f32; pixel_count];
     for pixel_index in 0..pixel_count {
-        let denominator = whitelight[pixel_index] * n;
-        if denominator > 1e-6 {
-            position_u[pixel_index] = weighted_u[pixel_index] / denominator;
-            position_v[pixel_index] = weighted_v[pixel_index] / denominator;
+        if whitelight[pixel_index] > whitelight_threshold {
+            let denominator = whitelight[pixel_index] * n;
+            position_u[pixel_index] =
+                (weighted_u[pixel_index] / denominator).clamp(0.0, 1.0);
+            position_v[pixel_index] =
+                (weighted_v[pixel_index] / denominator).clamp(0.0, 1.0);
         }
     }
 

@@ -192,11 +192,12 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
         for cell_index in 0..cell_count {
             cell_paths.push(cell_frame_path(&steam_cells_dir, cell_index, frame_number));
         }
-        let mut fields = composite::composite_cells(
+        let fields = composite::composite_cells(
             &cell_paths,
             &cell_grid,
             manifest.cells_per_side,
             "steam",
+            steam_blur_sigma_px,
         )?;
         if fields.width != frame_width || fields.height != frame_height {
             return Err(format!(
@@ -225,28 +226,12 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             vec![0.0_f32; fields.width * fields.height]
         };
 
+        // Position fields (U/V/whitelight) are already blurred inside
+        // composite_cells before the per-pixel divide. Density comes
+        // from a separate EXR, so blur it here to match the position
+        // fields' softness — keeps the steam edge from looking harder
+        // in the density channel than in the scattered-light channel.
         if steam_blur_sigma_px > 0.0 {
-            composite::gaussian_blur_2d(
-                &mut fields.position_u,
-                fields.width,
-                fields.height,
-                steam_blur_sigma_px,
-            );
-            composite::gaussian_blur_2d(
-                &mut fields.position_v,
-                fields.width,
-                fields.height,
-                steam_blur_sigma_px,
-            );
-            composite::gaussian_blur_2d(
-                &mut fields.whitelight,
-                fields.width,
-                fields.height,
-                steam_blur_sigma_px,
-            );
-            // Match the position fields' softness so the steam edge
-            // doesn't look harder in the density channel than in the
-            // scattered-light channel.
             composite::gaussian_blur_2d(
                 &mut density_field,
                 fields.width,
