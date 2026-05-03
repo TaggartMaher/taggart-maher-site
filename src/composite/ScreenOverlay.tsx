@@ -26,6 +26,14 @@ const TEXTURE_WIDTH = 1920 / 2;
 const TEXTURE_HEIGHT = Math.round(
   (TEXTURE_WIDTH * screenDimensions.heightMeters) / screenDimensions.widthMeters,
 );
+// Eco-mode texture dimensions. Halving each axis cuts the GPU upload
+// cost ~4× and shrinks every level of the dual-Kawase blur chain that
+// the static + steam compositors run on the texture. The foreignObject
+// SVG is still rasterized at the full natural size and downscaled by
+// drawImage, so the on-page surface layout doesn't change — only the
+// bounce-light source resolution does, which the heavy blur masks.
+const TEXTURE_WIDTH_ECO_MODE = Math.round(TEXTURE_WIDTH / 2);
+const TEXTURE_HEIGHT_ECO_MODE = Math.round(TEXTURE_HEIGHT / 2);
 
 // Natural pixel size of the un-transformed overlay. The matrix3d transform
 // warps these pixels onto the projected screen quad in viewport space.
@@ -176,11 +184,14 @@ export function ScreenOverlay({
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
 
-  // Allocate the texture canvas on mount and expose it via the parent ref.
+  // Allocate the texture canvas on mount, and re-allocate when eco
+  // mode toggles so the smaller eco-size canvas / GPU texture takes
+  // effect immediately. Re-running this effect bumps the revision so
+  // the compositors notice the new canvas and re-upload.
   useLayoutEffect(() => {
     const canvas = document.createElement("canvas");
-    canvas.width = TEXTURE_WIDTH;
-    canvas.height = TEXTURE_HEIGHT;
+    canvas.width = settings.ecoMode ? TEXTURE_WIDTH_ECO_MODE : TEXTURE_WIDTH;
+    canvas.height = settings.ecoMode ? TEXTURE_HEIGHT_ECO_MODE : TEXTURE_HEIGHT;
     const context = canvas.getContext("2d");
     if (context) {
       context.fillStyle = "#fafafa";
@@ -189,12 +200,16 @@ export function ScreenOverlay({
     internalCanvasRef.current = canvas;
     textureCanvasRef.current = canvas;
     textureRevisionRef.current = (textureRevisionRef.current ?? 0) + 1;
+    // Force the rasterizer to capture into the freshly-allocated
+    // canvas on its next tick — otherwise the bounce light shows the
+    // initial #fafafa fill until the next external dirty signal.
+    dirtyRef.current = true;
     return () => {
       if (textureCanvasRef.current === canvas) {
         textureCanvasRef.current = null;
       }
     };
-  }, [textureCanvasRef, textureRevisionRef]);
+  }, [textureCanvasRef, textureRevisionRef, settings.ecoMode]);
 
   // One-time log if the user has Chrome's HTML-in-Canvas flag enabled —
   // the compositor would benefit from `texElementImage2D`, but wiring
@@ -440,6 +455,10 @@ export function ScreenOverlay({
     settings.imageBackgroundUrl,
     settings.colorBackgroundEnabled,
     settings.colorBackgroundColor,
+    // Re-run the rAF loop when eco mode toggles so the closure picks up
+    // the freshly-allocated texture canvas (the layout effect above
+    // swaps `internalCanvasRef.current` to a new half-size canvas).
+    settings.ecoMode,
     perfMetricsRef,
     textureRevisionRef,
   ]);

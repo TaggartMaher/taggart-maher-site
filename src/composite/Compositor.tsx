@@ -1,5 +1,10 @@
 import { useEffect, useRef } from "react";
-import { beautyImagePath, positionImagePath } from "../config";
+import {
+  beautyImagePath,
+  compositorEcoModeMaxDpr,
+  compositorFpsEcoMode,
+  positionImagePath,
+} from "../config";
 import { loadAsset, loadAssetAsImage } from "../loading/loadAsset";
 import { loadingTracker } from "../loading/LoadingTracker";
 import { decodeExr } from "./decodeExr";
@@ -46,6 +51,10 @@ interface CompositorProps {
   screenSaturation: number;
   screenContrast: number;
   screenBrightness: number;
+  // User-toggled performance setting. When on, the compositor caps its
+  // effective devicePixelRatio at `compositorEcoModeMaxDpr` so the
+  // fragment shader runs over fewer pixels on hi-DPI displays.
+  ecoMode: boolean;
   // Optional sink for per-frame performance metrics, mutated each frame.
   perfMetricsRef?: React.RefObject<PerfMetrics>;
 }
@@ -92,6 +101,7 @@ export function Compositor({
   screenSaturation,
   screenContrast,
   screenBrightness,
+  ecoMode,
   perfMetricsRef,
   screenSourceRevisionRef,
 }: CompositorProps) {
@@ -114,6 +124,8 @@ export function Compositor({
   screenContrastRef.current = screenContrast;
   const screenBrightnessRef = useRef(screenBrightness);
   screenBrightnessRef.current = screenBrightness;
+  const ecoModeRef = useRef(ecoMode);
+  ecoModeRef.current = ecoMode;
   // Hidden-tab pause. The rAF loop parks itself when document.hidden
   // is true (browsers throttle but don't reliably stop rAF on hidden
   // tabs), and a separate effect below pokes it awake on visibility
@@ -290,6 +302,10 @@ export function Compositor({
     // Last screen-source revision we uploaded via texImage2D. -1 forces
     // an upload on the first frame.
     let lastUploadedScreenSourceRevision = -1;
+    // Timestamp of the last fully-rendered frame, in performance.now()
+    // milliseconds. Used by the eco-mode FPS throttle to skip rAFs that
+    // arrive sooner than the eco frame interval.
+    let lastRenderTimestamp = 0;
     const recentFrameTimestamps: number[] = [];
     const recentFrameTimestampsCapacity = 60;
 
@@ -366,9 +382,12 @@ export function Compositor({
 
     function resizeCanvasToViewport(): void {
       if (!canvas || !gl) return;
-      const devicePixelRatio = window.devicePixelRatio || 1;
-      const targetWidth = Math.max(1, Math.floor(canvas.clientWidth * devicePixelRatio));
-      const targetHeight = Math.max(1, Math.floor(canvas.clientHeight * devicePixelRatio));
+      const rawDevicePixelRatio = window.devicePixelRatio || 1;
+      const effectiveDevicePixelRatio = ecoModeRef.current
+        ? Math.min(rawDevicePixelRatio, compositorEcoModeMaxDpr)
+        : rawDevicePixelRatio;
+      const targetWidth = Math.max(1, Math.floor(canvas.clientWidth * effectiveDevicePixelRatio));
+      const targetHeight = Math.max(1, Math.floor(canvas.clientHeight * effectiveDevicePixelRatio));
       if (canvas.width !== targetWidth || canvas.height !== targetHeight) {
         canvas.width = targetWidth;
         canvas.height = targetHeight;
@@ -528,6 +547,19 @@ export function Compositor({
         animationFrameHandle = null;
         return;
       }
+      // Eco-mode FPS throttle. The rAF still spins (closure call only)
+      // but renderFrame's upload + blur chain + composite is gated by
+      // a fixed frame interval, so the GPU does much less work per
+      // wall-clock second on hi-DPI displays.
+      const now = performance.now();
+      if (ecoModeRef.current) {
+        const ecoFrameIntervalMs = 1000 / compositorFpsEcoMode;
+        if (now - lastRenderTimestamp < ecoFrameIntervalMs) {
+          animationFrameHandle = requestAnimationFrame(tick);
+          return;
+        }
+      }
+      lastRenderTimestamp = now;
       renderFrame();
       if (cancelled) return;
       animationFrameHandle = requestAnimationFrame(tick);

@@ -103,6 +103,19 @@ export const rasterizerFps = 24;
 // the slower update without visible stepping.
 export const rasterizerFpsEcoMode = 12;
 
+// Cap on the compositor canvas's effective devicePixelRatio in eco
+// mode. The fragment shader cost scales with pixel count, so a 2× DPR
+// display does 4× the per-frame shader work — capping at 1.0 brings
+// that back to baseline. The composite is upscaled by the browser to
+// CSS pixel size, which the heavy bounce-light blur masks anyway.
+export const compositorEcoModeMaxDpr = 1.0;
+
+// Target FPS cap for the static compositor in eco mode. The beauty +
+// position textures are static, so cutting render frequency just
+// makes the user-content reflection update at a slower cadence — the
+// bounce light is dual-Kawase-blurred anyway, so 30 Hz is plenty.
+export const compositorFpsEcoMode = 30;
+
 export const steamCrop = {
   minX: parseEnvFloat(import.meta.env.STEAM_CROP_MIN_X, 0.375),
   maxX: parseEnvFloat(import.meta.env.STEAM_CROP_MAX_X, 0.625),

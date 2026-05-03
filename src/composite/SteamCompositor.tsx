@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import {
+  compositorEcoModeMaxDpr,
   steamAtlasColumns,
   steamAtlasMetaPath,
   steamAtlasPath,
@@ -334,9 +335,12 @@ export function SteamCompositor({
 
     function resizeCanvasToViewport(): void {
       if (!canvas || !gl) return;
-      const devicePixelRatio = window.devicePixelRatio || 1;
-      const targetWidth = Math.max(1, Math.floor(canvas.clientWidth * devicePixelRatio));
-      const targetHeight = Math.max(1, Math.floor(canvas.clientHeight * devicePixelRatio));
+      const rawDevicePixelRatio = window.devicePixelRatio || 1;
+      const effectiveDevicePixelRatio = ecoModeRef.current
+        ? Math.min(rawDevicePixelRatio, compositorEcoModeMaxDpr)
+        : rawDevicePixelRatio;
+      const targetWidth = Math.max(1, Math.floor(canvas.clientWidth * effectiveDevicePixelRatio));
+      const targetHeight = Math.max(1, Math.floor(canvas.clientHeight * effectiveDevicePixelRatio));
       if (canvas.width !== targetWidth || canvas.height !== targetHeight) {
         canvas.width = targetWidth;
         canvas.height = targetHeight;

@@ -42,6 +42,7 @@ export function FullEntry({ modeReason }: FullEntryProps) {
             screenSaturation={debugSettings.screenSaturation}
             screenContrast={debugSettings.screenContrast}
             screenBrightness={debugSettings.screenBrightness}
+            ecoMode={debugSettings.ecoMode}
             perfMetricsRef={perfMetricsRef}
           />
           <ScreenOverlay
