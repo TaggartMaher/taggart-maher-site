@@ -1,9 +1,8 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { snapdom, preCache } from "@zumer/snapdom";
 import { detectHtmlInCanvasSupport } from "./htmlInCanvas";
 import {
-  ecoModeRasterizerScaleMultiplier,
   rasterizerFps,
+  rasterizerFpsEcoMode,
   screenDimensions,
   screenProjectedCorners,
 } from "../config";
@@ -38,14 +37,36 @@ const OVERLAY_NATURAL_HEIGHT = Math.round(
   (OVERLAY_NATURAL_WIDTH * screenDimensions.heightMeters) / screenDimensions.widthMeters,
 );
 
-// snapDOM rasterizes the live element at element-natural size by default
-// (1600px wide). The texture canvas is smaller, so we'd then drawImage-
-// downscale. Asking snapDOM for a smaller raster directly cuts the SVG
-// decode cost roughly quadratically, with no perceptual loss because the
-// bounce light is dual-Kawase-blurred downstream.
-const RASTERIZER_SCALE = TEXTURE_WIDTH / OVERLAY_NATURAL_WIDTH;
-
 const SQUARE_FRACTION = 1 / 5;
+
+// Cached concatenation of every CSS rule in document.styleSheets,
+// inlined into each captured SVG so the rasterized DOM lays out the
+// same way it does on the page. Building this is the single biggest
+// per-call cost of the foreignObject path on a rich page (hundreds of
+// CSS rules). Cache invalidates when the count of stylesheets changes
+// — sufficient for HMR / async CSS chunk loads, which is the only
+// realistic source of changes after first paint.
+let cachedStyleSheetText: string | null = null;
+let cachedStyleSheetCount = -1;
+function getInlinedStyleSheetText(): string {
+  if (cachedStyleSheetText !== null && cachedStyleSheetCount === document.styleSheets.length) {
+    return cachedStyleSheetText;
+  }
+  cachedStyleSheetCount = document.styleSheets.length;
+  cachedStyleSheetText = Array.from(document.styleSheets)
+    .map((sheet) => {
+      try {
+        return Array.from(sheet.cssRules)
+          .map((rule) => rule.cssText)
+          .join("\n");
+      } catch {
+        // Cross-origin sheets throw on cssRules access — skip them.
+        return "";
+      }
+    })
+    .join("\n");
+  return cachedStyleSheetText;
+}
 
 interface ScreenOverlayProps {
   settings: DebugSettings;
@@ -64,33 +85,66 @@ interface ScreenOverlayProps {
   // The DOM mounted inside the simulated screen — desktop emulator
   // (Portfolio) in FULL_MODE, the lite interface in LIGHTWEIGHT_MODE.
   // Stays mounted even when image/color overlays are showing, because
-  // the offscreen texture-paint pass uses it as a snapDOM source.
+  // the offscreen texture-paint pass uses it as the foreignObject
+  // rasterization source.
   children: ReactNode;
 }
 
-// Rasterize an HTMLElement onto the supplied texture canvas via snapDOM.
-// snapDOM clones the live element into a self-contained SVG with computed
-// styles and (with embedFonts) the relevant @font-face data inlined, so
-// cross-origin Google Fonts render correctly. cache: 'full' keeps the
-// inlined CSS / font URIs across captures so steady-state cost is
-// dominated by the SVG decode rather than style discovery.
+// Serialize an HTMLElement into a canvas via SVG <foreignObject>. The
+// element's own markup plus the page's full inlined stylesheet text are
+// dropped into a self-contained SVG, then decoded as an image and
+// drawn to the destination canvas. The decode happens off the main
+// thread, so the per-call work that competes with React/pointer-event
+// handling is dominated by the (cached) stylesheet inlining and the
+// XML serialization — both bulk operations that the browser optimizes
+// well, unlike a per-element computed-style walk.
+//
+// Cross-origin fonts (Google Fonts) won't load through this path; the
+// resulting bounce-light texture renders with system-font fallbacks.
+// That's fine — the texture is dual-Kawase-blurred to mush before it
+// reaches the emitter, so the font fallback is invisible. The on-page
+// Portfolio still uses the real fonts via normal CSS.
 async function renderHtmlElementToCanvas(
   element: HTMLElement,
   canvas: HTMLCanvasElement,
-  rasterScale: number,
 ): Promise<void> {
-  const result = await snapdom(element, {
-    fast: true,
-    embedFonts: true,
-    cache: "full",
-    backgroundColor: "#fafafa",
-    scale: rasterScale,
+  const styleText = getInlinedStyleSheetText();
+
+  const serializer = new XMLSerializer();
+  const elementMarkup = serializer.serializeToString(element);
+
+  // Lay the foreignObject out at the surface container's natural pixel
+  // size (offsetWidth/offsetHeight). The container sits inside a
+  // matrix3d-projected parent, so getBoundingClientRect would return
+  // post-projection viewport pixels — but window positions in
+  // Portfolio are computed in the un-projected natural space, so the
+  // SVG must lay out there too. drawImage below stretches the result
+  // to the texture canvas size.
+  const sourceWidth = Math.max(1, element.offsetWidth);
+  const sourceHeight = Math.max(1, element.offsetHeight);
+
+  const svg =
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${sourceWidth}" height="${sourceHeight}">` +
+    `<foreignObject width="100%" height="100%">` +
+    `<div xmlns="http://www.w3.org/1999/xhtml" style="width:${sourceWidth}px;height:${sourceHeight}px;background:#fafafa;overflow:hidden;">` +
+    `<style>${styleText}</style>` +
+    elementMarkup +
+    `</div>` +
+    `</foreignObject>` +
+    `</svg>`;
+
+  const dataUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+  const image = new Image();
+  await new Promise<void>((resolve, reject) => {
+    image.onload = () => resolve();
+    image.onerror = () => reject(new Error("[overlay] foreignObject SVG image failed to load"));
+    image.src = dataUrl;
   });
-  const sourceCanvas = await result.toCanvas();
+
   const context = canvas.getContext("2d");
   if (!context) return;
   context.clearRect(0, 0, canvas.width, canvas.height);
-  context.drawImage(sourceCanvas, 0, 0, canvas.width, canvas.height);
+  context.drawImage(image, 0, 0, canvas.width, canvas.height);
 }
 
 export function ScreenOverlay({
@@ -105,10 +159,6 @@ export function ScreenOverlay({
   const overlayRef = useRef<HTMLDivElement | null>(null);
   const internalCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const loadedImageRef = useRef<{ url: string; image: HTMLImageElement } | null>(null);
-  // Tracks the surface container element identity that snapDOM has
-  // already pre-cached for. Re-runs preCache if the container ref points
-  // at a different element (mode toggles cause remounts).
-  const precachedContainerRef = useRef<HTMLElement | null>(null);
   // Dirty flag for the surface-mode rAF loop. When true the next tick
   // re-rasterizes; when false the tick only repaints the square overlay
   // on top of the existing snapshot. Listeners and observers below set
@@ -149,7 +199,7 @@ export function ScreenOverlay({
     if (detectHtmlInCanvasSupport()) {
       console.info(
         "[overlay] HTML-in-Canvas (texElementImage2D) detected. Faster path " +
-          "available — currently using the snapDOM rasterizer. See " +
+          "available — currently using the foreignObject rasterizer. See " +
           "src/composite/htmlInCanvas.ts.",
       );
     }
@@ -158,14 +208,15 @@ export function ScreenOverlay({
   // Drive the screen-content texture. Three modes:
   //   - Image background: load once, paint once.
   //   - Color background: paint once.
-  //   - Portfolio (default): rAF loop, single in-flight snapshot, so
-  //     the bounce-light texture tracks live UI changes (drag, focus,
-  //     window state). A dirty flag gates the snapshot so idle frames
-  //     skip the snapDOM capture entirely, and an FPS throttle with a
-  //     low-power fallback caps the rasterizer's worst-case CPU cost.
+  //   - Surface (default): rAF loop, single in-flight foreignObject
+  //     snapshot, so the bounce-light texture tracks live UI changes
+  //     (drag, focus, window state). A dirty flag gates the snapshot
+  //     so idle frames skip the capture entirely, and an FPS throttle
+  //     (`rasterizerFps`, or `rasterizerFpsEcoMode` when the user has
+  //     eco mode on) caps the rasterizer's worst-case CPU cost.
   // The square overlay is painted on top of whichever background is
   // current — for the rAF mode that means it gets re-painted after
-  // each Portfolio snapshot.
+  // each surface snapshot.
   useEffect(() => {
     const canvas = internalCanvasRef.current;
     if (!canvas) return;
@@ -210,18 +261,13 @@ export function ScreenOverlay({
       context.drawImage(cached.image, 0, 0, canvas.width, canvas.height);
     }
 
-    async function snapshotSurface(rasterScale: number): Promise<void> {
+    async function snapshotSurface(): Promise<void> {
       if (rasterizing) return;
       const source = surfaceContainerRef.current;
       if (!source || !canvas) return;
       rasterizing = true;
       try {
-        if (precachedContainerRef.current !== source) {
-          precachedContainerRef.current = source;
-          await preCache(source, { embedFonts: true });
-          if (cancelled) return;
-        }
-        await renderHtmlElementToCanvas(source, canvas, rasterScale);
+        await renderHtmlElementToCanvas(source, canvas);
       } catch (error) {
         if (!context) return;
         console.warn("[overlay] failed to rasterize surface DOM:", error);
@@ -251,10 +297,10 @@ export function ScreenOverlay({
     } else {
       // Surface mode — drive a self-paced rAF loop. The next frame
       // schedules only after the previous snapshot resolves, so we
-      // never queue more than one snapDOM capture at a time. The dirty
-      // flag gates the snapshot: in steady-state idle the loop only
-      // re-paints the square overlay onto the previous snapshot, which
-      // is effectively free.
+      // never queue more than one foreignObject capture at a time. The
+      // dirty flag gates the snapshot: in steady-state idle the loop
+      // only re-paints the square overlay onto the previous snapshot,
+      // which is effectively free.
       dirtyRef.current = true;
       const container = surfaceContainerRef.current;
       let lastRasterizationTimestamp = 0;
@@ -299,7 +345,7 @@ export function ScreenOverlay({
         "focusout",
         "scroll",
       ] as const;
-      const containerEventOptions: AddEventListenerOptions = { capture: true };
+      const captureListenerOptions: AddEventListenerOptions = { capture: true };
       let mutationObserver: MutationObserver | null = null;
       let resizeObserver: ResizeObserver | null = null;
       if (container) {
@@ -313,7 +359,7 @@ export function ScreenOverlay({
         resizeObserver = new ResizeObserver(markDirty);
         resizeObserver.observe(container);
         for (const eventName of containerEventNames) {
-          container.addEventListener(eventName, markDirty, containerEventOptions);
+          container.addEventListener(eventName, markDirty, captureListenerOptions);
         }
       }
 
@@ -324,21 +370,18 @@ export function ScreenOverlay({
         // idle — recordRasterization alone wouldn't update it once
         // snapshots stop arriving.
         publishRasterizerFps(now);
-        // Eco mode is a user-controlled debug toggle; when on we render
-        // snapDOM at a smaller scale (cheaper SVG raster). The cap on
-        // raster fps stays the same in either mode — eco only affects
-        // resolution.
-        const rasterScale = settingsRef.current.ecoMode
-          ? RASTERIZER_SCALE * ecoModeRasterizerScaleMultiplier
-          : RASTERIZER_SCALE;
-        const frameIntervalMs = 1000 / rasterizerFps;
+        // Eco mode lowers the rasterizer's target FPS; the per-call
+        // foreignObject cost is unchanged but each capture has more
+        // breathing room between it and the next.
+        const effectiveFps = settingsRef.current.ecoMode ? rasterizerFpsEcoMode : rasterizerFps;
+        const frameIntervalMs = 1000 / effectiveFps;
         if (dirtyRef.current && now - lastRasterizationTimestamp >= frameIntervalMs) {
           // Clear the flag BEFORE awaiting the snapshot so any change
           // observed during the in-flight capture re-marks dirty and is
           // picked up on the next tick.
           dirtyRef.current = false;
           lastRasterizationTimestamp = now;
-          void snapshotSurface(rasterScale).then(() => {
+          void snapshotSurface().then(() => {
             if (cancelled) return;
             paintSquare();
             bumpRevision();
@@ -359,7 +402,7 @@ export function ScreenOverlay({
         resizeObserver?.disconnect();
         if (container) {
           for (const eventName of containerEventNames) {
-            container.removeEventListener(eventName, markDirty, containerEventOptions);
+            container.removeEventListener(eventName, markDirty, captureListenerOptions);
           }
         }
       };
@@ -447,13 +490,10 @@ export function ScreenOverlay({
     const sideFractionY = (SQUARE_FRACTION * OVERLAY_NATURAL_WIDTH) / OVERLAY_NATURAL_HEIGHT;
 
     function pointerToNormalized(clientX: number, clientY: number): Vector2 {
-      const overlayRect = overlay!.getBoundingClientRect();
-      // The overlay element's transform-origin is its top-left, which is
-      // positioned at viewport (0, 0) thanks to position: fixed; top: 0;
-      // left: 0. Pointer client coords are therefore already relative to
-      // that origin. (Bounding rect retrieval here just guards against
-      // edge cases where layout hasn't settled.)
-      void overlayRect;
+      // The overlay element is position: fixed at (0, 0) with
+      // transform-origin at its top-left, so client coords are already
+      // in the same frame as the matrix3d projection — no
+      // getBoundingClientRect needed.
       const naturalPoint = inverseProjectViewportPoint(
         [clientX, clientY],
         OVERLAY_NATURAL_WIDTH,

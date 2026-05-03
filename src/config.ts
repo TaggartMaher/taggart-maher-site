@@ -96,14 +96,12 @@ export function parseEnvFloat(rawValue: unknown, fallback: number): number {
 // re-rasterizes faster than this, even if the display refresh rate is
 // higher (e.g. 144 Hz). The bounce light is heavily blurred so the
 // reader can't tell the rasterizer isn't running per-display-refresh.
-export const rasterizerFps = 60;
+export const rasterizerFps = 24;
 
-// Multiplier applied to the rasterizer's snapDOM scale when the
-// user-toggled `ecoMode` debug setting is on. Smaller multipliers cut
-// SVG raster cost roughly quadratically at the cost of a softer source
-// for the bounce-light blur — usually invisible after the dual-Kawase
-// chain on the way to the emitter.
-export const ecoModeRasterizerScaleMultiplier = 0.025;
+// Target FPS when the user-toggled `ecoMode` debug setting is on. Half
+// the normal rate; the bounce light's dual-Kawase blur smooths over
+// the slower update without visible stepping.
+export const rasterizerFpsEcoMode = 12;
 
 export const steamCrop = {
   minX: parseEnvFloat(import.meta.env.STEAM_CROP_MIN_X, 0.375),
