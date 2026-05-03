@@ -49,31 +49,41 @@ export const PORTFOLIO: PortfolioData = {
     "Entrepreneurial software engineer who works closely with business owners to identify pain points and ship custom solutions that move the needle.",
 
   about: {
-    headline: "Hi, I'm Taggart.",
-    tldr: "Full-stack developer with a track record of shipping production systems in high-stakes environments. I gravitate toward simulation, graphics, and any problem nobody else wants to touch.",
+    headline: "Hello",
+    tldr: "I'm a Fullstack developer. I have a lot of experience with data migration and business interfaces. I also spend a lot of my time working with 3D simulations and graphics. See my projects page, I do a lot.",
     facts: [
       ["name", "Taggart Maher"],
       ["role", "Full Stack Developer"],
       ["location", "Newark, DE"],
       ["email", "taggart.maher@gmail.com"],
-      ["phone", "443-832-5786"],
-      ["status", "[ open to work / employed / etc ]"],
+      ["status", "[ open to work ]"],
       ["languages", "TypeScript · Rust · PHP · Python · Ruby · Java · C++ · SQL"],
       ["frontend", "React · Next.js · Tailwind · Vue · Svelte · Blade"],
       ["backend", "Node · Laravel · Express · Prisma · Docker · AWS"],
       ["specialty", "3D graphics · 3D modeling · 3D printing · graphics programming"],
     ],
     longform: [
-      "I'm an entrepreneurial software engineer based in Newark, DE. Most of my career has been spent embedded with business owners — figuring out where the real pain is and writing the software that actually fixes it. I've shipped production systems for finance, insurance, ecommerce, and travel, and I tend to end up writing the part nobody else wants to write.",
-      "Outside of contract work I'm usually deep in something graphics-adjacent: a respiratory simulation in Rust + wgpu, a voxel engine, real-time vegetation, projection mapping. I like working at the seam between simulation and interface.",
-      "If you're a recruiter: yes, probably interested. If you're a friend: hi.",
+      "I'm an entrepreneurial software engineer based in Newark, DE. Most of my career has been spent embedded with business owners — figuring out where the pain points are and writing the software that actually fixes it. I've shipped production systems for finance, insurance, ecommerce, and travel.",
+      "Outside of contract work I'm usually deep in something graphics-adjacent. I'll never stop my obsession with high-performance computing. I have to push the limits of what these machines can do.",
+      "If you're interested in what I do, I'd love to hear from you!",
     ],
     links: [
-      { label: "GitHub", hint: "[ github.com/handle ]", href: "#" },
-      { label: "LinkedIn", hint: "[ linkedin.com/in/handle ]", href: "#" },
+      {
+        label: "GitHub",
+        hint: "[ github.com/TaggartMaher ]",
+        href: "https://github.com/TaggartMaher",
+      },
+      {
+        label: "LinkedIn",
+        hint: "[ linkedin.com/in/taggart-maher ]",
+        href: "https://www.linkedin.com/in/taggart-maher/",
+      },
       { label: "Email", hint: "taggart.maher@gmail.com", href: "mailto:taggart.maher@gmail.com" },
-      { label: "Phone", hint: "443-832-5786", href: "tel:+14438325786" },
-      { label: "Resume", hint: "[ resume.pdf ]", href: "#" },
+      {
+        label: "Youtube (VFX, Projects, etc.)",
+        hint: "[ @tagxialo ]",
+        href: "https://www.youtube.com/@tagxialo",
+      },
     ],
   },
 
