@@ -235,13 +235,13 @@
   left: 0;
   right: 0;
   bottom: 0;
-  height: 44px;
+  height: 56px;
   background: rgba(22, 25, 32, 0.78);
   backdrop-filter: blur(24px) saturate(160%);
   border-top: 1px solid rgba(255, 255, 255, 0.08);
   display: flex;
   align-items: stretch;
-  padding: 0 6px;
+  padding: 0 8px;
   z-index: 9999;
 }
 .portfolio .tb-launcher {
@@ -251,12 +251,12 @@
   color: var(--fg);
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 0 14px;
+  gap: 12px;
+  padding: 0 16px;
   cursor: pointer;
   border-radius: 6px;
-  margin: 4px 0;
-  font-size: 31.25px;
+  margin: 6px 0;
+  font-size: 35px;
   font-weight: 500;
   transition: 0.1s;
 }
@@ -269,12 +269,12 @@
 }
 .portfolio .tb-launch-ico {
   display: grid;
-  grid-template-columns: repeat(3, 4px);
-  gap: 2px;
+  grid-template-columns: repeat(3, 5px);
+  gap: 3px;
 }
 .portfolio .tb-launch-ico .dot {
-  width: 4px;
-  height: 4px;
+  width: 5px;
+  height: 5px;
   background: currentColor;
   border-radius: 1px;
 }
@@ -305,11 +305,11 @@
   align-items: center;
   justify-content: center;
   gap: 0;
-  padding: 0 10px;
+  padding: 0 12px;
   cursor: pointer;
   border-radius: 5px 5px 0 0;
-  max-width: 56px;
-  min-width: 56px;
+  max-width: 68px;
+  min-width: 68px;
   flex-shrink: 0;
   transition: 0.1s;
 }
@@ -326,7 +326,10 @@
   opacity: 0.55;
 }
 .portfolio .tb-task-ico {
-  font-size: 24px;
+  font-size: 30px;
+  display: grid;
+  place-items: center;
+  line-height: 1;
 }
 .portfolio .tb-task-label {
   display: none;
@@ -342,8 +345,8 @@
   background: rgba(255, 255, 255, 0.04);
   border: 1px solid var(--border-soft);
   color: var(--fg-2);
-  padding: 6px 12px;
-  font-size: 27.5px;
+  padding: 8px 14px;
+  font-size: 30.5px;
   cursor: pointer;
   border-radius: 4px;
   letter-spacing: 0.04em;
@@ -407,7 +410,7 @@
 .portfolio .launcher {
   position: absolute;
   left: 8px;
-  bottom: 48px;
+  bottom: 60px;
   width: 600px;
   background: rgba(35, 38, 46, 0.94);
   backdrop-filter: blur(24px) saturate(160%);

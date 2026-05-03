@@ -29,7 +29,7 @@ import { InternalLinkProvider } from "./content/Markdown";
 import { useRouter } from "../router/useRouter";
 import { pathForState, targetForPath, type DesktopRouterTarget } from "./useDesktopRouter";
 
-const TASKBAR_HEIGHT = 44;
+const TASKBAR_HEIGHT = 56;
 
 // Default window sizes from the design handoff. These are tuned for a
 // ~1600px-wide working area; we scale them to the actual container so the

@@ -1,6 +1,6 @@
 import { memo, useEffect, useRef, type ReactNode } from "react";
 
-const TASKBAR_HEIGHT = 44;
+const TASKBAR_HEIGHT = 56;
 const TITLEBAR_HEIGHT = 32;
 const MIN_WIDTH = 360;
 const MIN_HEIGHT = 280;
