@@ -306,8 +306,8 @@ export function DebugMenu({ settings, onChange, perfMetricsRef }: DebugMenuProps
                 className="debug-menu-control"
                 type="range"
                 min={0}
-                max={3}
-                step={0.01}
+                max={100}
+                step={1.0}
                 value={settings.coffeeSteamIntensity}
                 onChange={(event) =>
                   onChange({
