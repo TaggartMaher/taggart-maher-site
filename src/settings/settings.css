@@ -1,0 +1,135 @@
+.settings-view {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 24px 8px;
+  color: var(--text);
+}
+
+.settings-header h1 {
+  margin: 0 0 8px 0;
+  font-size: 28px;
+}
+
+.settings-lede {
+  color: var(--accent-muted, #888);
+  margin: 0;
+  line-height: 1.55;
+}
+
+.settings-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.settings-section h2 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.settings-kv {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--surface, transparent);
+  border: 1px solid var(--rule, #ccc);
+}
+
+.settings-kv th,
+.settings-kv td {
+  text-align: left;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--rule, #ccc);
+  vertical-align: top;
+}
+
+.settings-kv tr:last-child th,
+.settings-kv tr:last-child td {
+  border-bottom: none;
+}
+
+.settings-kv th {
+  width: 40%;
+  font-weight: normal;
+  color: var(--accent-muted, #888);
+}
+
+.settings-verdict {
+  padding: 12px 16px;
+  border-left: 4px solid var(--rule, #ccc);
+  background: var(--surface, transparent);
+  font-weight: 500;
+}
+
+.settings-verdict-green {
+  border-left-color: var(--good, #4a7);
+}
+
+.settings-verdict-amber {
+  border-left-color: var(--warn, #d4a957);
+}
+
+.settings-verdict-red {
+  border-left-color: #c25;
+}
+
+.settings-current-card,
+.settings-other-card {
+  padding: 16px;
+  background: var(--surface, transparent);
+  border: 1px solid var(--rule, #ccc);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.settings-mode-name {
+  font-size: 18px;
+  margin: 0;
+}
+
+.settings-current-card p,
+.settings-other-card p {
+  margin: 0;
+  line-height: 1.55;
+}
+
+.settings-source {
+  font-size: 12px;
+  color: var(--accent-muted, #888);
+}
+
+.settings-warning {
+  color: var(--warn, #d4a957);
+  font-size: 13px;
+}
+
+.settings-other-grid {
+  display: grid;
+  gap: 16px;
+}
+
+.settings-switch-button,
+.settings-reset-button {
+  align-self: flex-start;
+  background: transparent;
+  color: var(--accent, currentColor);
+  border: 1px solid var(--accent, currentColor);
+  padding: 10px 16px;
+  font-size: 13px;
+  cursor: pointer;
+  min-height: 44px;
+}
+
+.settings-switch-button:hover,
+.settings-reset-button:hover {
+  background: var(--accent, currentColor);
+  color: var(--bg, transparent);
+}
+
+.settings-reset-button {
+  border-color: var(--accent-muted, #888);
+  color: var(--accent-muted, #888);
+}
