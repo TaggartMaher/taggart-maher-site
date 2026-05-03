@@ -338,7 +338,7 @@ export function ExperienceApp() {
 export function ProjectsApp() {
   const projects = PROJECTS;
   const { selectedId, setSelectedId } = useProjectsSelection();
-  const [view, setView] = useState<"grid" | "list">("grid");
+  const [view, setView] = useState<"grid" | "list">("list");
   const current = projects.find((project) => project.id === selectedId);
 
   return (

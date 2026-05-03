@@ -431,3 +431,80 @@ html[data-mode="LIGHTWEIGHT_MODE"] body {
     padding: 24px 16px 48px 16px;
   }
 }
+
+/* LIGHTWEIGHT_MODE text-size scale-up (×1.30). FALLBACK_MODE shares
+   this stylesheet but its sizes are intentionally left at the
+   defaults above, so every override here is scoped to
+   html[data-mode="LIGHTWEIGHT_MODE"]. The body rule rescales any
+   inherited text (paragraphs, lists, table cells) that has no
+   explicit font-size; the rest re-declare each explicit px value at
+   the boosted size. */
+html[data-mode="LIGHTWEIGHT_MODE"] body {
+  font-size: 1.3em;
+}
+html[data-mode="LIGHTWEIGHT_MODE"] .lite-nav-brand {
+  font-size: 23.4px;
+}
+html[data-mode="LIGHTWEIGHT_MODE"] .lite-nav a.lite-nav-link {
+  font-size: 18.2px;
+}
+html[data-mode="LIGHTWEIGHT_MODE"] .lite-footer-inner {
+  font-size: 16.9px;
+}
+html[data-mode="LIGHTWEIGHT_MODE"] .lite-page h1 {
+  font-size: 41.6px;
+}
+html[data-mode="LIGHTWEIGHT_MODE"] .lite-page h2 {
+  font-size: 28.6px;
+}
+html[data-mode="LIGHTWEIGHT_MODE"] .lite-page h3 {
+  font-size: 23.4px;
+}
+html[data-mode="LIGHTWEIGHT_MODE"] .lite-page .lite-lede {
+  font-size: 22.1px;
+}
+html[data-mode="LIGHTWEIGHT_MODE"] .lite-page pre,
+html[data-mode="LIGHTWEIGHT_MODE"] .lite-page code {
+  font-size: 16.9px;
+}
+html[data-mode="LIGHTWEIGHT_MODE"] .lite-link-list .lite-link-hint {
+  font-size: 16.9px;
+}
+html[data-mode="LIGHTWEIGHT_MODE"] .lite-timeline-year,
+html[data-mode="LIGHTWEIGHT_MODE"] .lite-timeline-where {
+  font-size: 16.9px;
+}
+html[data-mode="LIGHTWEIGHT_MODE"] .lite-card-meta {
+  font-size: 15.6px;
+}
+html[data-mode="LIGHTWEIGHT_MODE"] .lite-card-title {
+  font-size: 23.4px;
+}
+html[data-mode="LIGHTWEIGHT_MODE"] .lite-card-excerpt {
+  font-size: 18.2px;
+}
+html[data-mode="LIGHTWEIGHT_MODE"] .lite-chip {
+  font-size: 14.3px;
+}
+html[data-mode="LIGHTWEIGHT_MODE"] .lite-detail-back {
+  font-size: 16.9px;
+}
+html[data-mode="LIGHTWEIGHT_MODE"] .lite-detail-meta {
+  font-size: 15.6px;
+}
+html[data-mode="LIGHTWEIGHT_MODE"] .lite-mystery-codename {
+  font-size: 18.2px;
+}
+html[data-mode="LIGHTWEIGHT_MODE"] .lite-mystery-eta,
+html[data-mode="LIGHTWEIGHT_MODE"] .lite-mystery-expansion {
+  font-size: 15.6px;
+}
+html[data-mode="LIGHTWEIGHT_MODE"] .copy-link-button {
+  font-size: 16.9px;
+}
+
+@media (max-width: 600px) {
+  html[data-mode="LIGHTWEIGHT_MODE"] .lite-page h1 {
+    font-size: 33.8px;
+  }
+}

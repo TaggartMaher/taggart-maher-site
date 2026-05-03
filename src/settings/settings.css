@@ -86,7 +86,7 @@
 }
 
 .settings-mode-name {
-  font-size: 18px;
+  font-size: 45px;
   margin: 0;
 }
 
@@ -94,10 +94,11 @@
 .settings-other-card p {
   margin: 0;
   line-height: 1.55;
+  font-size: 0.75em;
 }
 
 .settings-source {
-  font-size: 12px;
+  font-size: 24px;
   color: var(--accent-muted, #888);
 }
 

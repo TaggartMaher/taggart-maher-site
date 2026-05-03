@@ -30,7 +30,7 @@
     linear-gradient(160deg, #1d2027 0%, #161920 60%, #0f1115 100%);
   color: var(--fg);
   font-family: "Noto Sans", ui-sans-serif, system-ui, sans-serif;
-  font-size: 14px;
+  font-size: 35px;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -139,7 +139,7 @@
   filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.4));
 }
 .portfolio .di-label {
-  font-size: 11.5px;
+  font-size: 28.75px;
   text-align: center;
   line-height: 1.2;
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
@@ -157,7 +157,7 @@
   border: 1px solid var(--accent);
   border-radius: 8px;
   padding: 8px 14px;
-  font-size: 11px;
+  font-size: 27.5px;
   color: var(--fg-2);
   display: flex;
   align-items: center;
@@ -210,7 +210,7 @@
   cursor: pointer;
   border-radius: 6px;
   margin: 4px 0;
-  font-size: 12.5px;
+  font-size: 31.25px;
   font-weight: 500;
   transition: 0.1s;
 }
@@ -257,13 +257,13 @@
   color: var(--fg-2);
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 0 12px;
+  justify-content: center;
+  gap: 0;
+  padding: 0 10px;
   cursor: pointer;
   border-radius: 5px 5px 0 0;
-  font-size: 12px;
-  max-width: 200px;
-  min-width: 120px;
+  max-width: 56px;
+  min-width: 56px;
   flex-shrink: 0;
   transition: 0.1s;
 }
@@ -280,14 +280,10 @@
   opacity: 0.55;
 }
 .portfolio .tb-task-ico {
-  font-size: 13px;
+  font-size: 24px;
 }
 .portfolio .tb-task-label {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  flex: 1;
-  text-align: left;
+  display: none;
 }
 .portfolio .tb-mode-buttons {
   display: flex;
@@ -301,7 +297,7 @@
   border: 1px solid var(--border-soft);
   color: var(--fg-2);
   padding: 6px 12px;
-  font-size: 11px;
+  font-size: 27.5px;
   cursor: pointer;
   border-radius: 4px;
   letter-spacing: 0.04em;
@@ -364,7 +360,7 @@
   position: absolute;
   left: 8px;
   bottom: 48px;
-  width: 380px;
+  width: 600px;
   background: rgba(35, 38, 46, 0.94);
   backdrop-filter: blur(24px) saturate(160%);
   border: 1px solid var(--border);
@@ -396,11 +392,11 @@
   letter-spacing: 0.04em;
 }
 .portfolio .lh-name {
-  font-size: 14px;
+  font-size: 17.5px;
   font-weight: 500;
 }
 .portfolio .lh-sub {
-  font-size: 11px;
+  font-size: 27.5px;
   color: var(--fg-3);
 }
 .portfolio .launcher-search {
@@ -412,13 +408,13 @@
   border-radius: 6px;
   padding: 6px 10px;
   color: var(--fg-3);
-  font-size: 12px;
+  font-size: 30px;
 }
 .portfolio .ls-prefix {
   color: var(--fg-3);
 }
 .portfolio .launcher-section {
-  font-size: 10px;
+  font-size: 12.5px;
   letter-spacing: 0.14em;
   color: var(--fg-3);
   margin-top: 4px;
@@ -450,13 +446,13 @@
   filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.3));
 }
 .portfolio .li-name {
-  font-size: 11px;
+  font-size: 27.5px;
   color: var(--fg-2);
 }
 .portfolio .launcher-foot {
   display: flex;
   justify-content: space-between;
-  font-size: 10px;
+  font-size: 25px;
   color: var(--fg-3);
   padding-top: 8px;
   border-top: 1px solid var(--border-soft);
@@ -520,7 +516,7 @@
   line-height: 1;
 }
 .portfolio .pwin-title {
-  font-size: 12.5px;
+  font-size: 15.625px;
   font-weight: 500;
   color: var(--fg);
   overflow: hidden;
@@ -613,7 +609,7 @@
   border: 1px solid var(--border-soft);
   border-radius: 4px;
   padding: 4px 10px;
-  font-size: 11.5px;
+  font-size: 28.75px;
   color: var(--fg-2);
 }
 .portfolio .tb-right {
@@ -632,7 +628,7 @@
   background: transparent;
   border: 0;
   color: var(--fg-3);
-  font-size: 11px;
+  font-size: 27.5px;
   padding: 3px 8px;
   border-radius: 3px;
   cursor: pointer;
@@ -666,7 +662,7 @@
   overflow-y: auto;
 }
 .portfolio .sb-section {
-  font-size: 10px;
+  font-size: 12.5px;
   letter-spacing: 0.12em;
   color: var(--fg-3);
   padding: 4px 8px 6px;
@@ -683,7 +679,7 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  font-size: 12.5px;
+  font-size: 31.25px;
   transition: 0.1s;
 }
 .portfolio .sb-item:hover {
@@ -739,12 +735,12 @@
   line-height: 1;
 }
 .portfolio .dol-name {
-  font-size: 12.5px;
+  font-size: 31.25px;
   font-weight: 500;
   text-align: center;
 }
 .portfolio .dol-sub {
-  font-size: 10px;
+  font-size: 25px;
   color: var(--fg-3);
   text-align: center;
 }
@@ -754,7 +750,7 @@
   padding: 4px 12px;
   background: var(--bg-2);
   border-top: 1px solid var(--border-soft);
-  font-size: 11px;
+  font-size: 27.5px;
   color: var(--fg-3);
   flex-shrink: 0;
 }
@@ -772,13 +768,13 @@
   flex: 1;
 }
 .portfolio .doc-pad h1 {
-  font-size: 34px;
+  font-size: 42.5px;
   margin: 6px 0 10px;
   font-weight: 500;
   letter-spacing: -0.01em;
 }
 .portfolio .doc-pad h3 {
-  font-size: 13px;
+  font-size: 16.25px;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--fg-3);
@@ -789,17 +785,17 @@
   text-transform: none;
   letter-spacing: 0;
   color: var(--accent);
-  font-size: 13px;
+  font-size: 16.25px;
 }
 .portfolio .doc-pad p {
-  font-size: 14.5px;
+  font-size: 36.25px;
   line-height: 1.6;
   color: var(--fg-2);
   max-width: 62ch;
   margin: 0 0 12px;
 }
 .portfolio .lede {
-  font-size: 16px;
+  font-size: 40px;
   color: var(--fg);
   max-width: 62ch;
   margin: 0 0 8px !important;
@@ -807,7 +803,7 @@
 .portfolio .doc-pad ul {
   padding-left: 20px;
   color: var(--fg-2);
-  font-size: 14.5px;
+  font-size: 36.25px;
   line-height: 1.7;
   max-width: 62ch;
 }
@@ -818,7 +814,7 @@
   color: var(--fg);
 }
 .portfolio .readme-meta {
-  font-size: 11px;
+  font-size: 27.5px;
   color: var(--fg-3);
   padding-bottom: 14px;
   border-bottom: 1px dashed var(--border-soft);
@@ -832,7 +828,7 @@
   border-radius: 3px;
   padding: 0 5px;
   font-family: "JetBrains Mono", monospace;
-  font-size: 11px;
+  font-size: 27.5px;
   color: var(--fg);
 }
 
@@ -846,7 +842,7 @@
 .portfolio .kv th {
   text-align: left;
   font-weight: 500;
-  font-size: 11px;
+  font-size: 13.75px;
   color: var(--fg-3);
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -858,7 +854,7 @@
 .portfolio .kv td {
   padding: 8px 0;
   color: var(--fg);
-  font-size: 14px;
+  font-size: 35px;
   border-top: 1px solid var(--border-soft);
 }
 
@@ -891,21 +887,21 @@
   color: var(--accent);
 }
 .portfolio .link-name {
-  font-size: 15px;
+  font-size: 18.75px;
   font-weight: 500;
 }
 .portfolio .link-hint {
-  font-size: 11.5px;
+  font-size: 28.75px;
   color: var(--fg-3);
 }
 .portfolio .link-go {
-  font-size: 11px;
+  font-size: 27.5px;
   color: var(--fg-3);
   text-align: right;
   letter-spacing: 0.06em;
 }
 .portfolio .links.big .link-name {
-  font-size: 18px;
+  font-size: 22.5px;
 }
 .portfolio .links.big .link-row {
   padding: 16px 8px;
@@ -932,7 +928,7 @@
   border-bottom: 1px solid var(--border);
 }
 .portfolio .tl-year {
-  font-size: 11.5px;
+  font-size: 28.75px;
   color: var(--fg-3);
   padding-top: 4px;
   font-weight: 500;
@@ -976,18 +972,18 @@
   margin-bottom: 6px;
 }
 .portfolio .tl-role {
-  font-size: 18px;
+  font-size: 22.5px;
   font-weight: 500;
   color: var(--fg);
   letter-spacing: -0.005em;
 }
 .portfolio .tl-org {
-  font-size: 13px;
+  font-size: 16.25px;
   color: var(--accent);
   font-weight: 500;
 }
 .portfolio .tl-where {
-  font-size: 11.5px;
+  font-size: 28.75px;
   color: var(--fg-3);
   letter-spacing: 0.04em;
 }
@@ -1000,7 +996,7 @@
   gap: 3px;
 }
 .portfolio .tl-bullets li {
-  font-size: 13.5px;
+  font-size: 33.75px;
   color: var(--fg-2);
   line-height: 1.55;
   padding-left: 14px;
@@ -1085,7 +1081,7 @@
   position: absolute;
   bottom: 4px;
   left: 6px;
-  font-size: 9px;
+  font-size: 22.5px;
   color: var(--fg-3);
   letter-spacing: 0.05em;
 }
@@ -1095,7 +1091,7 @@
   right: 6px;
   background: var(--warn);
   color: #1a1a1a;
-  font-size: 9px;
+  font-size: 22.5px;
   padding: 1px 6px;
   border-radius: 999px;
   font-weight: 600;
@@ -1107,12 +1103,12 @@
   margin-left: 8px;
 }
 .portfolio .proj-card .proj-name {
-  font-size: 13px;
+  font-size: 22px;
   font-weight: 500;
   line-height: 1.2;
 }
 .portfolio .proj-card .proj-tag {
-  font-size: 10px;
+  font-size: 13px;
   color: var(--fg-3);
   letter-spacing: 0.04em;
 }
@@ -1123,14 +1119,14 @@
 .portfolio .proj-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 13px;
+  font-size: 32.5px;
 }
 .portfolio .proj-table th {
   text-align: left;
   background: var(--panel-2);
   color: var(--fg-3);
   font-weight: 500;
-  font-size: 11px;
+  font-size: 13.75px;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   padding: 6px 10px;
@@ -1162,11 +1158,11 @@
   color: var(--fg);
 }
 .portfolio .row-tag {
-  font-size: 11px;
+  font-size: 27.5px;
   color: var(--fg-3);
 }
 .portfolio .row-year {
-  font-size: 11px;
+  font-size: 27.5px;
   color: var(--fg-3);
   width: 80px;
 }
@@ -1188,14 +1184,14 @@
   padding: 20px 24px 28px;
 }
 .portfolio .detail-meta {
-  font-size: 10.5px;
+  font-size: 13.125px;
   letter-spacing: 0.1em;
   color: var(--accent);
   margin-bottom: 6px;
   text-transform: uppercase;
 }
 .portfolio .detail-pad h2 {
-  font-size: 26px;
+  font-size: 32.5px;
   margin: 0 0 8px;
   font-weight: 500;
   letter-spacing: -0.01em;
@@ -1211,7 +1207,7 @@
   border-bottom: 1px solid var(--border-soft);
 }
 .portfolio .kv-mini-k {
-  font-size: 10px;
+  font-size: 12.5px;
   color: var(--fg-3);
   letter-spacing: 0.1em;
   text-transform: uppercase;
@@ -1222,7 +1218,7 @@
   gap: 5px;
 }
 .portfolio .chip {
-  font-size: 10px;
+  font-size: 25px;
   padding: 2px 7px;
   border: 1px solid var(--border);
   border-radius: 3px;
@@ -1242,7 +1238,7 @@
   border: 0;
   padding: 6px 14px;
   border-radius: 4px;
-  font-size: 12px;
+  font-size: 30px;
   font-weight: 600;
   text-decoration: none;
   cursor: pointer;
@@ -1291,32 +1287,32 @@
   margin-bottom: 4px;
 }
 .portfolio .post-tag {
-  font-size: 10px;
+  font-size: 12.5px;
   letter-spacing: 0.12em;
   color: var(--accent);
   text-transform: uppercase;
   font-weight: 600;
 }
 .portfolio .post-meta {
-  font-size: 10.5px;
+  font-size: 26.25px;
   color: var(--fg-3);
 }
 .portfolio .post h3 {
-  font-size: 20px;
+  font-size: 25px;
   margin: 0 0 6px;
   font-weight: 500;
   color: var(--fg);
   letter-spacing: -0.01em;
 }
 .portfolio .post-ex {
-  font-size: 13.5px;
+  font-size: 33.75px;
   color: var(--fg-2);
   margin: 0 0 6px;
   max-width: 62ch;
   line-height: 1.5;
 }
 .portfolio .post-go {
-  font-size: 11px;
+  font-size: 27.5px;
   color: var(--fg-3);
   letter-spacing: 0.04em;
 }
@@ -1329,7 +1325,7 @@
   display: inline-block;
   background: var(--classified);
   color: #fff;
-  font-size: 10px;
+  font-size: 12.5px;
   letter-spacing: 0.18em;
   padding: 4px 12px;
   border-radius: 3px;
@@ -1380,25 +1376,25 @@
   align-items: baseline;
 }
 .portfolio .mys-codename {
-  font-size: 22px;
+  font-size: 27.5px;
   font-weight: 600;
   color: var(--fg);
   letter-spacing: 0.06em;
 }
 .portfolio .mys-eta {
-  font-size: 10px;
+  font-size: 25px;
   color: var(--fg-3);
   letter-spacing: 0.1em;
 }
 .portfolio .mys-expansion {
-  font-size: 11px;
+  font-size: 13.75px;
   color: var(--classified);
   letter-spacing: 0.1em;
   margin: 2px 0 10px;
   font-weight: 500;
 }
 .portfolio .mys-hint {
-  font-size: 14px;
+  font-size: 35px;
   color: var(--fg-2);
   margin: 0 0 14px;
   max-width: 55ch;
@@ -1423,7 +1419,7 @@
   width: 72%;
 }
 .portfolio .mys-foot {
-  font-size: 10px;
+  font-size: 25px;
   color: var(--fg-3);
   font-style: italic;
   letter-spacing: 0.04em;

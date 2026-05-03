@@ -96,34 +96,22 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
     let position_out = composite_dir.join("position.exr");
     let beauty_out = composite_dir.join("beauty.png");
 
-    eprintln!("[bake static] reading {cell_count} cells, accumulating per-pixel sums...");
-    let mut fields =
-        composite::composite_cells(&cell_paths, &cell_grid, cells_per_side, "screen")?;
-
     if composite::POSITION_BLUR_SIGMA_PX > 0.0 {
         eprintln!(
-            "[bake static] applying Gaussian blur (sigma = {} px)...",
+            "[bake static] reading {cell_count} cells, accumulating per-pixel sums, \
+             pre-divide blur sigma = {} px...",
             composite::POSITION_BLUR_SIGMA_PX
         );
-        composite::gaussian_blur_2d(
-            &mut fields.position_u,
-            fields.width,
-            fields.height,
-            composite::POSITION_BLUR_SIGMA_PX,
-        );
-        composite::gaussian_blur_2d(
-            &mut fields.position_v,
-            fields.width,
-            fields.height,
-            composite::POSITION_BLUR_SIGMA_PX,
-        );
-        composite::gaussian_blur_2d(
-            &mut fields.whitelight,
-            fields.width,
-            fields.height,
-            composite::POSITION_BLUR_SIGMA_PX,
-        );
+    } else {
+        eprintln!("[bake static] reading {cell_count} cells, accumulating per-pixel sums...");
     }
+    let fields = composite::composite_cells(
+        &cell_paths,
+        &cell_grid,
+        cells_per_side,
+        "screen",
+        composite::POSITION_BLUR_SIGMA_PX,
+    )?;
 
     eprintln!(
         "[bake static] writing {} ({}x{}, RGBA16F uncompressed)...",
