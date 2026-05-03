@@ -4,7 +4,6 @@ import {
   steamAtlasMetaPath,
   steamAtlasPath,
   steamAtlasRows,
-  steamCellsManifestPath,
   steamCrop,
   steamFps,
   steamFrameCount,
@@ -62,10 +61,6 @@ interface SteamCompositorProps {
   // Render the raw atlas in a corner instead of compositing — useful
   // for verifying the atlas decoded and packed correctly.
   showAtlas: boolean;
-}
-
-interface SteamManifest {
-  cellsPerSide?: number;
 }
 
 interface SteamAtlasMeta {
@@ -138,6 +133,12 @@ export function SteamCompositor({
   frameOverrideRef.current = frameOverride;
   const showAtlasRef = useRef(showAtlas);
   showAtlasRef.current = showAtlas;
+  // The main effect parks the rAF loop when steam is disabled or eco
+  // mode is on — keeping the loop ticking just to clear an empty canvas
+  // each frame is wasted main-thread time. Exposes a wakeup function via
+  // this ref so a separate effect below can resume the loop the moment
+  // the props transition back into "active" state.
+  const wakeupRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -301,7 +302,6 @@ export function SteamCompositor({
     let atlasMetaReady = false;
     let whitelightScale = 1.0;
     let renderingStarted = false;
-    let manifestSeen = false;
     const renderStartTimestamp = performance.now();
     loadAssetAsImage("steam_atlas.png", steamAtlasPath)
       .then((atlasImage) => {
@@ -330,21 +330,6 @@ export function SteamCompositor({
       })
       .catch((error) => {
         console.warn("[steam] failed to load steam_atlas_meta.json:", error);
-      });
-
-    loadAsset("steam_cells_manifest.json", steamCellsManifestPath)
-      .then((buffer) => {
-        if (cancelled) return;
-        const manifest = JSON.parse(new TextDecoder().decode(buffer)) as SteamManifest;
-        manifestSeen = true;
-        if (manifest.cellsPerSide !== 3) {
-          console.warn(
-            `[steam] expected steam manifest cellsPerSide=3, got ${manifest.cellsPerSide ?? "unknown"}`,
-          );
-        }
-      })
-      .catch((error) => {
-        console.warn("[steam] failed to load steam_cells_manifest.json:", error);
       });
 
     function resizeCanvasToViewport(): void {
@@ -492,19 +477,36 @@ export function SteamCompositor({
       gl.bindVertexArray(null);
     }
 
-    function scheduleNextFrame(): void {
+    function tick(): void {
       if (cancelled) return;
-      animationFrameHandle = requestAnimationFrame(() => {
-        renderFrame();
-        scheduleNextFrame();
-      });
+      renderFrame();
+      if (cancelled) return;
+      // When the steam pass is off (user disabled it or eco mode is on),
+      // renderFrame already cleared the canvas as its first step, so the
+      // last visible frame is empty — we can stop scheduling rAFs and
+      // wait to be woken up by a prop change.
+      if (!enabledRef.current || ecoModeRef.current) {
+        animationFrameHandle = null;
+        return;
+      }
+      animationFrameHandle = requestAnimationFrame(tick);
     }
+
+    function wakeup(): void {
+      if (cancelled || animationFrameHandle !== null) return;
+      if (!renderingStarted) return;
+      if (!enabledRef.current || ecoModeRef.current) return;
+      animationFrameHandle = requestAnimationFrame(tick);
+    }
+    wakeupRef.current = wakeup;
 
     function maybeStartRendering(): void {
       if (renderingStarted) return;
       if (!atlasTextureReady || !atlasMetaReady) return;
       renderingStarted = true;
-      scheduleNextFrame();
+      // First tick runs even when disabled so the canvas gets its
+      // initial clear; tick() will then park itself if appropriate.
+      animationFrameHandle = requestAnimationFrame(tick);
     }
 
     return () => {
@@ -512,6 +514,7 @@ export function SteamCompositor({
       if (animationFrameHandle !== null) {
         cancelAnimationFrame(animationFrameHandle);
       }
+      wakeupRef.current = null;
       gl.deleteTexture(atlasTexture);
       gl.deleteTexture(screenTexture);
       for (const level of blurLevels) {
@@ -523,10 +526,18 @@ export function SteamCompositor({
       gl.deleteProgram(program);
       gl.deleteProgram(downsampleProgram);
       gl.deleteProgram(upsampleProgram);
-      // Reference manifestSeen so the linter doesn't strip the fetch path.
-      void manifestSeen;
     };
   }, [screenSourceCanvasRef, screenSourceRevisionRef]);
+
+  // Resume the parked rAF loop when steam transitions back into an
+  // active state. enabled/ecoMode are mirrored into refs above so the
+  // main effect doesn't tear down on these changes; this effect just
+  // pokes the existing loop awake.
+  useEffect(() => {
+    if (enabled && !ecoMode) {
+      wakeupRef.current?.();
+    }
+  }, [enabled, ecoMode]);
 
   return <canvas ref={canvasRef} className="steam-compositor-canvas" />;
 }

@@ -1,4 +1,4 @@
-import { useRef, type ReactNode } from "react";
+import { memo, useEffect, useRef, type ReactNode } from "react";
 
 const TASKBAR_HEIGHT = 44;
 const TITLEBAR_HEIGHT = 32;
@@ -7,6 +7,11 @@ const MIN_HEIGHT = 280;
 const DRAG_KEEP_VISIBLE_PIXELS = 80;
 
 export interface PWindowProps {
+  // Stable id of the window in the Portfolio's state. Passed back to
+  // every callback so Portfolio can keep its handlers stable across
+  // renders — without that, React.memo on PWindow can't bail out
+  // during a drag (each render produces fresh inline arrows).
+  windowId: string;
   title: string;
   icon: string;
   positionX: number;
@@ -19,12 +24,12 @@ export interface PWindowProps {
   maximized: boolean;
   containerWidth: number;
   containerHeight: number;
-  onFocus: () => void;
-  onClose: () => void;
-  onMinimize: () => void;
-  onMaximize: () => void;
-  onMove: (positionX: number, positionY: number) => void;
-  onResize: (width: number, height: number) => void;
+  onFocus: (windowId: string) => void;
+  onClose: (windowId: string) => void;
+  onMinimize: (windowId: string) => void;
+  onMaximize: (windowId: string) => void;
+  onMove: (windowId: string, positionX: number, positionY: number) => void;
+  onResize: (windowId: string, width: number, height: number) => void;
   children: ReactNode;
 }
 
@@ -56,7 +61,8 @@ function readViewportScale(element: HTMLElement): { x: number; y: number } {
   return { x, y };
 }
 
-export function PWindow({
+function PWindowInner({
+  windowId,
   title,
   icon,
   positionX,
@@ -79,13 +85,39 @@ export function PWindow({
 }: PWindowProps) {
   const dragRef = useRef<DragState | null>(null);
   const resizeRef = useRef<DragState | null>(null);
+  // High-poll-rate mice fire pointermove faster than the display refreshes;
+  // committing every move straight to React state would re-render the
+  // Portfolio tree more often than the screen can show it, and each
+  // commit mutates DOM that snapDOM (the screen-content rasterizer)
+  // observes globally. Latest computed position/size is stashed in a
+  // ref and flushed once per rAF, so React work is capped at the
+  // display rate regardless of mouse polling rate.
+  const pendingMoveRef = useRef<{ positionX: number; positionY: number } | null>(null);
+  const pendingResizeRef = useRef<{ width: number; height: number } | null>(null);
+  const moveRafHandleRef = useRef<number | null>(null);
+  const resizeRafHandleRef = useRef<number | null>(null);
+
+  // Make sure no rAF survives unmount — if a PWindow closes mid-drag
+  // the queued callback would otherwise fire on a vanished window id.
+  useEffect(() => {
+    return () => {
+      if (moveRafHandleRef.current !== null) {
+        cancelAnimationFrame(moveRafHandleRef.current);
+        moveRafHandleRef.current = null;
+      }
+      if (resizeRafHandleRef.current !== null) {
+        cancelAnimationFrame(resizeRafHandleRef.current);
+        resizeRafHandleRef.current = null;
+      }
+    };
+  }, []);
 
   function handleTitleBarPointerDown(event: React.PointerEvent<HTMLDivElement>): void {
     if (maximized) return;
     // Only react to the primary button on mouse, ignore multi-touch.
     if (event.button !== 0) return;
     event.preventDefault();
-    onFocus();
+    onFocus(windowId);
     event.currentTarget.setPointerCapture(event.pointerId);
     const scale = readViewportScale(event.currentTarget);
     dragRef.current = {
@@ -111,12 +143,35 @@ export function PWindow({
     const nextY = drag.startWindowY + (event.clientY - drag.startMouseY) / drag.viewportScaleY;
     const clampedX = Math.min(Math.max(nextX, minPositionX), maxPositionX);
     const clampedY = Math.min(Math.max(nextY, 0), maxPositionY);
-    onMove(clampedX, clampedY);
+    pendingMoveRef.current = { positionX: clampedX, positionY: clampedY };
+    if (moveRafHandleRef.current === null) {
+      moveRafHandleRef.current = requestAnimationFrame(() => {
+        moveRafHandleRef.current = null;
+        const pending = pendingMoveRef.current;
+        if (pending) {
+          pendingMoveRef.current = null;
+          onMove(windowId, pending.positionX, pending.positionY);
+        }
+      });
+    }
+  }
+
+  function flushPendingMove(): void {
+    if (moveRafHandleRef.current !== null) {
+      cancelAnimationFrame(moveRafHandleRef.current);
+      moveRafHandleRef.current = null;
+    }
+    const pending = pendingMoveRef.current;
+    if (pending) {
+      pendingMoveRef.current = null;
+      onMove(windowId, pending.positionX, pending.positionY);
+    }
   }
 
   function handleTitleBarPointerUp(event: React.PointerEvent<HTMLDivElement>): void {
     const drag = dragRef.current;
     if (!drag || drag.pointerId !== event.pointerId) return;
+    flushPendingMove();
     dragRef.current = null;
     if (event.currentTarget.hasPointerCapture(event.pointerId)) {
       event.currentTarget.releasePointerCapture(event.pointerId);
@@ -128,7 +183,7 @@ export function PWindow({
     if (event.button !== 0) return;
     event.preventDefault();
     event.stopPropagation();
-    onFocus();
+    onFocus(windowId);
     event.currentTarget.setPointerCapture(event.pointerId);
     const scale = readViewportScale(event.currentTarget);
     resizeRef.current = {
@@ -155,12 +210,35 @@ export function PWindow({
       MIN_HEIGHT,
       resize.startHeight + (event.clientY - resize.startMouseY) / resize.viewportScaleY,
     );
-    onResize(nextWidth, nextHeight);
+    pendingResizeRef.current = { width: nextWidth, height: nextHeight };
+    if (resizeRafHandleRef.current === null) {
+      resizeRafHandleRef.current = requestAnimationFrame(() => {
+        resizeRafHandleRef.current = null;
+        const pending = pendingResizeRef.current;
+        if (pending) {
+          pendingResizeRef.current = null;
+          onResize(windowId, pending.width, pending.height);
+        }
+      });
+    }
+  }
+
+  function flushPendingResize(): void {
+    if (resizeRafHandleRef.current !== null) {
+      cancelAnimationFrame(resizeRafHandleRef.current);
+      resizeRafHandleRef.current = null;
+    }
+    const pending = pendingResizeRef.current;
+    if (pending) {
+      pendingResizeRef.current = null;
+      onResize(windowId, pending.width, pending.height);
+    }
   }
 
   function handleResizePointerUp(event: React.PointerEvent<HTMLDivElement>): void {
     const resize = resizeRef.current;
     if (!resize || resize.pointerId !== event.pointerId) return;
+    flushPendingResize();
     resizeRef.current = null;
     if (event.currentTarget.hasPointerCapture(event.pointerId)) {
       event.currentTarget.releasePointerCapture(event.pointerId);
@@ -186,7 +264,7 @@ export function PWindow({
   // clicks to fire focus twice (mousedown bubbled up while pointerdown
   // ran), which raced with the drag-start state.
   function handleBodyPointerDown(): void {
-    onFocus();
+    onFocus(windowId);
   }
 
   return (
@@ -197,7 +275,7 @@ export function PWindow({
         onPointerMove={handleTitleBarPointerMove}
         onPointerUp={handleTitleBarPointerUp}
         onPointerCancel={handleTitleBarPointerUp}
-        onDoubleClick={onMaximize}
+        onDoubleClick={() => onMaximize(windowId)}
       >
         <div className="pwin-tb-l">
           <span className="pwin-icon">{icon}</span>
@@ -208,7 +286,7 @@ export function PWindow({
             className="pwin-btn min"
             onClick={(event) => {
               event.stopPropagation();
-              onMinimize();
+              onMinimize(windowId);
             }}
             aria-label="Minimize"
           >
@@ -220,7 +298,7 @@ export function PWindow({
             className="pwin-btn max"
             onClick={(event) => {
               event.stopPropagation();
-              onMaximize();
+              onMaximize(windowId);
             }}
             aria-label="Maximize"
           >
@@ -241,7 +319,7 @@ export function PWindow({
             className="pwin-btn close"
             onClick={(event) => {
               event.stopPropagation();
-              onClose();
+              onClose(windowId);
             }}
             aria-label="Close"
           >
@@ -280,3 +358,8 @@ export function PWindow({
     </div>
   );
 }
+
+// Memoized so a drag of one window doesn't reconcile every other window
+// (their props don't change). Relies on Portfolio passing stable
+// id-aware handlers — see useCallback'd focusWindow/moveWindow/etc.
+export const PWindow = memo(PWindowInner);
