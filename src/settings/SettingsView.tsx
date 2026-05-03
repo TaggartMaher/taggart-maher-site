@@ -196,7 +196,7 @@ export function SettingsView() {
       </section>
 
       <section className="settings-section">
-        <h2 className="serif">Other modes</h2>
+        <h2 className="serif settings-other-modes-heading">Other modes</h2>
         <div className="settings-other-grid">
           {otherModes.map((mode) => {
             const inFallbackNow = modeReason.mode === "FALLBACK_MODE";
