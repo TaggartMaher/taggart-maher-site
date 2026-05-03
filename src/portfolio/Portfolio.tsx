@@ -2,6 +2,7 @@ import {
   useCallback,
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
   type ComponentType,
@@ -17,9 +18,16 @@ import {
   MysteryApp,
   ProjectsApp,
   ReadmeApp,
+  SelectionProvider,
+  SettingsApp,
   WindowOpenerProvider,
   type AppId,
+  type SelectionState,
 } from "./apps";
+import { PROJECTS } from "./content/projects";
+import { InternalLinkProvider } from "./content/Markdown";
+import { useRouter } from "../router/useRouter";
+import { pathForState, targetForPath, type DesktopRouterTarget } from "./useDesktopRouter";
 
 const TASKBAR_HEIGHT = 44;
 
@@ -93,6 +101,13 @@ const APPS: Record<AppId, AppMeta> = {
     defaultHeight: 640,
     Component: ContactApp,
   },
+  settings: {
+    title: "Site Settings",
+    icon: "⚙",
+    defaultWidth: 880,
+    defaultHeight: 760,
+    Component: SettingsApp,
+  },
 };
 
 interface WindowState {
@@ -124,6 +139,11 @@ const DESKTOP_ICONS: Array<{ id: AppId; label: string; icon: string }> = [
   { id: "contact", label: "Contact", icon: "✉" },
 ];
 
+// Apps shown in the launcher grid. Settings is intentionally absent —
+// it has its own taskbar entry and is reachable via /settings or the
+// README link, but doesn't sit in the launcher next to content apps.
+const LAUNCHER_EXCLUDED_APPS: ReadonlySet<AppId> = new Set(["home", "settings"]);
+
 function formatTime(date: Date): string {
   const hours = String(date.getHours()).padStart(2, "0");
   const minutes = String(date.getMinutes()).padStart(2, "0");
@@ -139,6 +159,7 @@ function formatDate(date: Date): string {
 }
 
 export function Portfolio() {
+  const router = useRouter();
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
   const [windows, setWindows] = useState<WindowState[]>([]);
@@ -146,7 +167,15 @@ export function Portfolio() {
   const [launcherOpen, setLauncherOpen] = useState(false);
   const [now, setNow] = useState<Date>(() => new Date());
   const [showStartHint, setShowStartHint] = useState(true);
-  const [readmeOpenedRef, setReadmeOpenedRef] = useState(false);
+  // Selection state for the projects/blog windows is held here so the
+  // URL ↔ state sync below can read and write it directly.
+  const [projectsSelectedId, setProjectsSelectedId] = useState<string>(PROJECTS[0].id);
+  const [blogSelectedId, setBlogSelectedId] = useState<string | null>(null);
+  // Has the URL→state effect already kicked in once? Until it does we
+  // suppress the bootstrap "open the readme on first mount" flow,
+  // because the URL might say something like /blog/foo and we don't
+  // want the wrong window opening first.
+  const hasRunUrlBootstrapRef = useRef(false);
 
   // Track container size — all window math is container-relative because
   // the Portfolio is mounted inside the screen-rect overlay, not the
@@ -217,18 +246,37 @@ export function Portfolio() {
     [zCounter, containerSize.width, containerSize.height],
   );
 
-  // Open README on first load (once the container has measured).
+  // URL → state. Whenever the live router path changes (initial mount
+  // included) translate it into a desktop window action: open or focus
+  // the matching app, plus apply any sub-selection.
+  const lastDispatchedPathRef = useRef<string | null>(null);
   useEffect(() => {
-    if (readmeOpenedRef) return;
     if (containerSize.width === 0 || containerSize.height === 0) return;
-    const usableHeight = containerSize.height - TASKBAR_HEIGHT;
-    const targetHeight = Math.round(usableHeight * 0.9);
-    const targetWidth = Math.round(containerSize.width / 2);
-    const positionX = Math.round((containerSize.width - targetWidth) / 2);
-    const positionY = Math.round((usableHeight - targetHeight) / 2);
-    openApp("readme", { positionX, positionY, width: targetWidth, height: targetHeight });
-    setReadmeOpenedRef(true);
-  }, [containerSize.width, containerSize.height, readmeOpenedRef, openApp]);
+    if (lastDispatchedPathRef.current === router.path) return;
+    lastDispatchedPathRef.current = router.path;
+    const target: DesktopRouterTarget | null = targetForPath(router.path);
+    if (!target) return;
+    if (target.appId === "projects" && target.projectsSubId) {
+      setProjectsSelectedId(target.projectsSubId);
+    }
+    if (target.appId === "blog") {
+      setBlogSelectedId(target.blogSubId ?? null);
+    }
+    // The readme is the home target — open it with the larger
+    // bootstrap layout that the original code used so first-load
+    // doesn't reuse the small default size for this special window.
+    if (target.appId === "readme" && !hasRunUrlBootstrapRef.current) {
+      const usableHeight = containerSize.height - TASKBAR_HEIGHT;
+      const targetHeight = Math.round(usableHeight * 0.9);
+      const targetWidth = Math.round(containerSize.width / 2);
+      const positionX = Math.round((containerSize.width - targetWidth) / 2);
+      const positionY = Math.round((usableHeight - targetHeight) / 2);
+      openApp("readme", { positionX, positionY, width: targetWidth, height: targetHeight });
+    } else {
+      openApp(target.appId);
+    }
+    hasRunUrlBootstrapRef.current = true;
+  }, [router.path, containerSize.width, containerSize.height, openApp]);
 
   // Esc closes top window or the launcher.
   useEffect(() => {
@@ -288,163 +336,240 @@ export function Portfolio() {
     );
   }
 
-  const focusedId =
-    windows.length > 0 ? [...windows].sort((a, b) => b.zIndex - a.zIndex)[0].id : null;
+  const focusedWindow =
+    windows.length > 0
+      ? ([...windows]
+          .filter((window) => !window.minimized)
+          .sort((a, b) => b.zIndex - a.zIndex)[0] ?? null)
+      : null;
+  const focusedId = focusedWindow ? focusedWindow.id : null;
+  const focusedAppId: AppId | null = focusedWindow ? focusedWindow.appId : null;
+
+  // State → URL. When focus or selection changes, replaceState to the
+  // matching path so a same-tab refresh / "copy link" lands the user
+  // back where they were. Selection changes use replace (not push) so
+  // back/forward walks across windows, not across selections — the
+  // only push entries come from <Link> clicks via the router.
+  const lastWrittenPathRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!hasRunUrlBootstrapRef.current) return;
+    const nextPath = pathForState({
+      focusedAppId,
+      projectsSelectedId,
+      blogSelectedId,
+    });
+    if (lastWrittenPathRef.current === nextPath) return;
+    lastWrittenPathRef.current = nextPath;
+    if (router.path === nextPath) return;
+    router.replace(nextPath);
+  }, [focusedAppId, projectsSelectedId, blogSelectedId, router]);
+
+  // Markdown links inside the screen surface route through the same
+  // global router so /about → opens the about window with no reload.
+  // Paths without an app mapping fall through to a full reload, which
+  // re-runs chooseMode and lands the user in the lite view.
+  const handleInternalNavigate = useCallback(
+    (href: string) => {
+      const target = targetForPath(href);
+      if (!target) {
+        window.location.assign(href);
+        return;
+      }
+      router.navigate(href);
+    },
+    [router],
+  );
+
+  const selectionState = useMemo<SelectionState>(
+    () => ({
+      projectsSelectedId,
+      setProjectsSelectedId,
+      blogSelectedId,
+      setBlogSelectedId,
+    }),
+    [projectsSelectedId, blogSelectedId],
+  );
+
+  function switchToLightweightMode(): void {
+    window.location.assign(window.location.pathname + "?mode=lightweight");
+  }
 
   return (
     <WindowOpenerProvider opener={{ openApp }}>
-      <div className="portfolio" ref={containerRef}>
-        <div className="wp-orb wp-orb-1"></div>
-        <div className="wp-orb wp-orb-2"></div>
+      <SelectionProvider state={selectionState}>
+        <InternalLinkProvider onNavigate={handleInternalNavigate}>
+          <div className="portfolio" ref={containerRef}>
+            <div className="wp-orb wp-orb-1"></div>
+            <div className="wp-orb wp-orb-2"></div>
 
-        <div className="desk-icons">
-          {DESKTOP_ICONS.map((item) => (
-            <button
-              key={item.id}
-              className="desk-icon"
-              onDoubleClick={() => openApp(item.id)}
-              onClick={(event) => event.currentTarget.classList.add("sel")}
-              onBlur={(event) => event.currentTarget.classList.remove("sel")}
-            >
-              <div className="di-ico">{item.icon}</div>
-              <div className="di-label">{item.label}</div>
-            </button>
-          ))}
-        </div>
-
-        {showStartHint && (
-          <div className="welcome-hint mono" onClick={() => setShowStartHint(false)}>
-            <div className="hint-arrow">↓</div>
-            <div>tip: double-click any icon, or use the launcher below</div>
-          </div>
-        )}
-
-        {windows.map((window) => {
-          const meta = APPS[window.appId];
-          const Component = meta.Component;
-          return (
-            <PWindow
-              key={window.id}
-              title={meta.title}
-              icon={meta.icon}
-              positionX={window.positionX}
-              positionY={window.positionY}
-              width={window.width}
-              height={window.height}
-              zIndex={window.zIndex}
-              focused={window.id === focusedId}
-              minimized={window.minimized}
-              maximized={window.maximized}
-              containerWidth={containerSize.width}
-              containerHeight={containerSize.height}
-              onFocus={() => focusWindow(window.id)}
-              onClose={() => closeWindow(window.id)}
-              onMinimize={() => minimizeWindow(window.id)}
-              onMaximize={() => toggleMaximize(window.id)}
-              onMove={(positionX, positionY) => moveWindow(window.id, positionX, positionY)}
-              onResize={(width, height) => resizeWindow(window.id, width, height)}
-            >
-              <Component />
-            </PWindow>
-          );
-        })}
-
-        {launcherOpen && (
-          <>
-            <div className="launcher-bg" onClick={() => setLauncherOpen(false)}></div>
-            <div className="launcher" onClick={(event) => event.stopPropagation()}>
-              <div className="launcher-hdr">
-                <div className="lh-avatar">TM</div>
-                <div className="lh-info">
-                  <div className="lh-name">Taggart Maher</div>
-                  <div className="lh-sub mono">taggart@tm-portfolio</div>
-                </div>
-              </div>
-              <div className="launcher-search mono">
-                <span className="ls-prefix">⌕</span>
-                <span className="ls-placeholder">type / pick / open ...</span>
-              </div>
-              <div className="launcher-section mono">APPLICATIONS</div>
-              <div className="launcher-grid">
-                {(Object.entries(APPS) as Array<[AppId, AppMeta]>)
-                  .filter(([id]) => id !== "home")
-                  .map(([id, app]) => (
-                    <button key={id} className="launcher-item" onClick={() => openApp(id)}>
-                      <div className="li-ico">{app.icon}</div>
-                      <div className="li-name">{id.charAt(0).toUpperCase() + id.slice(1)}</div>
-                    </button>
-                  ))}
-                <button className="launcher-item" onClick={() => openApp("home")}>
-                  <div className="li-ico">📁</div>
-                  <div className="li-name">Home</div>
+            <div className="desk-icons">
+              {DESKTOP_ICONS.map((item) => (
+                <button
+                  key={item.id}
+                  className="desk-icon"
+                  onDoubleClick={() => openApp(item.id)}
+                  onClick={(event) => event.currentTarget.classList.add("sel")}
+                  onBlur={(event) => event.currentTarget.classList.remove("sel")}
+                >
+                  <div className="di-ico">{item.icon}</div>
+                  <div className="di-label">{item.label}</div>
                 </button>
-              </div>
-              <div className="launcher-foot mono">
-                <span>
-                  {windows.length} window{windows.length === 1 ? "" : "s"} open
-                </span>
-                <span>esc to close focused</span>
-              </div>
+              ))}
             </div>
-          </>
-        )}
 
-        <div className="taskbar">
-          <button
-            className={"tb-launcher" + (launcherOpen ? " active" : "")}
-            onClick={() => setLauncherOpen((open) => !open)}
-          >
-            <div className="tb-launch-ico">
-              <div className="dot"></div>
-              <div className="dot"></div>
-              <div className="dot"></div>
-              <div className="dot"></div>
-              <div className="dot"></div>
-              <div className="dot"></div>
-              <div className="dot"></div>
-              <div className="dot"></div>
-              <div className="dot"></div>
-            </div>
-            <span className="mono">tm-portfolio</span>
-          </button>
-          <div className="tb-divider"></div>
-          <div className="tb-tasks">
+            {showStartHint && (
+              <div className="welcome-hint mono" onClick={() => setShowStartHint(false)}>
+                <div className="hint-arrow">↓</div>
+                <div>tip: double-click any icon, or use the launcher below</div>
+              </div>
+            )}
+
             {windows.map((window) => {
               const meta = APPS[window.appId];
-              const isFocused = window.id === focusedId && !window.minimized;
+              const Component = meta.Component;
               return (
-                <button
+                <PWindow
                   key={window.id}
-                  className={
-                    "tb-task" +
-                    (isFocused ? " focused" : "") +
-                    (window.minimized ? " minimized" : "")
-                  }
-                  onClick={() => {
-                    if (window.minimized) focusWindow(window.id);
-                    else if (isFocused) minimizeWindow(window.id);
-                    else focusWindow(window.id);
-                  }}
+                  title={meta.title}
+                  icon={meta.icon}
+                  positionX={window.positionX}
+                  positionY={window.positionY}
+                  width={window.width}
+                  height={window.height}
+                  zIndex={window.zIndex}
+                  focused={window.id === focusedId}
+                  minimized={window.minimized}
+                  maximized={window.maximized}
+                  containerWidth={containerSize.width}
+                  containerHeight={containerSize.height}
+                  onFocus={() => focusWindow(window.id)}
+                  onClose={() => closeWindow(window.id)}
+                  onMinimize={() => minimizeWindow(window.id)}
+                  onMaximize={() => toggleMaximize(window.id)}
+                  onMove={(positionX, positionY) => moveWindow(window.id, positionX, positionY)}
+                  onResize={(width, height) => resizeWindow(window.id, width, height)}
                 >
-                  <span className="tb-task-ico">{meta.icon}</span>
-                  <span className="tb-task-label">{meta.title.split(" — ")[0]}</span>
-                </button>
+                  <Component />
+                </PWindow>
               );
             })}
-          </div>
-          <div className="tb-tray">
-            <div className="tray-icons mono">
-              <span title="Notifications">●</span>
-              <span title="Network">⌁</span>
-              <span title="Battery">▮</span>
+
+            {launcherOpen && (
+              <>
+                <div className="launcher-bg" onClick={() => setLauncherOpen(false)}></div>
+                <div className="launcher" onClick={(event) => event.stopPropagation()}>
+                  <div className="launcher-hdr">
+                    <div className="lh-avatar">TM</div>
+                    <div className="lh-info">
+                      <div className="lh-name">Taggart Maher</div>
+                      <div className="lh-sub mono">taggart@tm-portfolio</div>
+                    </div>
+                  </div>
+                  <div className="launcher-search mono">
+                    <span className="ls-prefix">⌕</span>
+                    <span className="ls-placeholder">type / pick / open ...</span>
+                  </div>
+                  <div className="launcher-section mono">APPLICATIONS</div>
+                  <div className="launcher-grid">
+                    {(Object.entries(APPS) as Array<[AppId, AppMeta]>)
+                      .filter(([id]) => !LAUNCHER_EXCLUDED_APPS.has(id))
+                      .map(([id, app]) => (
+                        <button key={id} className="launcher-item" onClick={() => openApp(id)}>
+                          <div className="li-ico">{app.icon}</div>
+                          <div className="li-name">{id.charAt(0).toUpperCase() + id.slice(1)}</div>
+                        </button>
+                      ))}
+                    <button className="launcher-item" onClick={() => openApp("home")}>
+                      <div className="li-ico">📁</div>
+                      <div className="li-name">Home</div>
+                    </button>
+                  </div>
+                  <div className="launcher-foot mono">
+                    <span>
+                      {windows.length} window{windows.length === 1 ? "" : "s"} open
+                    </span>
+                    <span>esc to close focused</span>
+                  </div>
+                </div>
+              </>
+            )}
+
+            <div className="taskbar">
+              <button
+                className={"tb-launcher" + (launcherOpen ? " active" : "")}
+                onClick={() => setLauncherOpen((open) => !open)}
+              >
+                <div className="tb-launch-ico">
+                  <div className="dot"></div>
+                  <div className="dot"></div>
+                  <div className="dot"></div>
+                  <div className="dot"></div>
+                  <div className="dot"></div>
+                  <div className="dot"></div>
+                  <div className="dot"></div>
+                  <div className="dot"></div>
+                  <div className="dot"></div>
+                </div>
+                <span className="mono">tm-portfolio</span>
+              </button>
+              <div className="tb-divider"></div>
+              <div className="tb-tasks">
+                {windows.map((window) => {
+                  const meta = APPS[window.appId];
+                  const isFocused = window.id === focusedId && !window.minimized;
+                  return (
+                    <button
+                      key={window.id}
+                      className={
+                        "tb-task" +
+                        (isFocused ? " focused" : "") +
+                        (window.minimized ? " minimized" : "")
+                      }
+                      onClick={() => {
+                        if (window.minimized) focusWindow(window.id);
+                        else if (isFocused) minimizeWindow(window.id);
+                        else focusWindow(window.id);
+                      }}
+                    >
+                      <span className="tb-task-ico">{meta.icon}</span>
+                      <span className="tb-task-label">{meta.title.split(" — ")[0]}</span>
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="tb-mode-buttons">
+                <button
+                  type="button"
+                  className="tb-mode-button tb-lightweight mono"
+                  title="Switch to a simpler interface inside the same scene."
+                  onClick={switchToLightweightMode}
+                >
+                  🌿 LIGHTWEIGHT MODE
+                </button>
+                <button
+                  type="button"
+                  className="tb-mode-button tb-settings mono"
+                  title="Choose how this site is rendered."
+                  onClick={() => openApp("settings")}
+                >
+                  ⚙ Site Settings
+                </button>
+              </div>
+              <div className="tb-tray">
+                <div className="tray-icons mono">
+                  <span title="Notifications">●</span>
+                  <span title="Network">⌁</span>
+                  <span title="Battery">▮</span>
+                </div>
+                <div className="tb-clock mono">
+                  <div className="tb-time">{formatTime(now)}</div>
+                  <div className="tb-date">{formatDate(now)}</div>
+                </div>
+              </div>
             </div>
-            <div className="tb-clock mono">
-              <div className="tb-time">{formatTime(now)}</div>
-              <div className="tb-date">{formatDate(now)}</div>
-            </div>
           </div>
-        </div>
-      </div>
+        </InternalLinkProvider>
+      </SelectionProvider>
     </WindowOpenerProvider>
   );
 }

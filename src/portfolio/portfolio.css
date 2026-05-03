@@ -289,6 +289,36 @@
   flex: 1;
   text-align: left;
 }
+.portfolio .tb-mode-buttons {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px;
+}
+.portfolio .tb-mode-button {
+  appearance: none;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border-soft);
+  color: var(--fg-2);
+  padding: 6px 12px;
+  font-size: 11px;
+  cursor: pointer;
+  border-radius: 4px;
+  letter-spacing: 0.04em;
+  transition: 0.1s;
+}
+.portfolio .tb-mode-button:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--fg);
+}
+.portfolio .tb-mode-button.tb-lightweight {
+  border-color: rgba(126, 166, 118, 0.5);
+  color: #b6d6ad;
+}
+.portfolio .tb-mode-button.tb-lightweight:hover {
+  background: rgba(126, 166, 118, 0.18);
+  color: #d6f0cc;
+}
 .portfolio .tb-tray {
   display: flex;
   align-items: center;

@@ -1,7 +1,6 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { snapdom, preCache } from "@zumer/snapdom";
 import { detectHtmlInCanvasSupport } from "./htmlInCanvas";
-import { Portfolio } from "../portfolio/Portfolio";
 import {
   ecoModeRasterizerScaleMultiplier,
   rasterizerFps,
@@ -62,6 +61,11 @@ interface ScreenOverlayProps {
   // sliding-window FPS into `rasterizerFps` so the debug menu can show
   // it; nothing in this component reads from it.
   perfMetricsRef: React.RefObject<PerfMetrics>;
+  // The DOM mounted inside the simulated screen — desktop emulator
+  // (Portfolio) in FULL_MODE, the lite interface in LIGHTWEIGHT_MODE.
+  // Stays mounted even when image/color overlays are showing, because
+  // the offscreen texture-paint pass uses it as a snapDOM source.
+  children: ReactNode;
 }
 
 // Rasterize an HTMLElement onto the supplied texture canvas via snapDOM.
@@ -95,16 +99,17 @@ export function ScreenOverlay({
   textureCanvasRef,
   textureRevisionRef,
   perfMetricsRef,
+  children,
 }: ScreenOverlayProps) {
-  const portfolioContainerRef = useRef<HTMLDivElement | null>(null);
+  const surfaceContainerRef = useRef<HTMLDivElement | null>(null);
   const overlayRef = useRef<HTMLDivElement | null>(null);
   const internalCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const loadedImageRef = useRef<{ url: string; image: HTMLImageElement } | null>(null);
-  // Tracks the Portfolio container element identity that snapDOM has
+  // Tracks the surface container element identity that snapDOM has
   // already pre-cached for. Re-runs preCache if the container ref points
   // at a different element (mode toggles cause remounts).
   const precachedContainerRef = useRef<HTMLElement | null>(null);
-  // Dirty flag for the Portfolio-mode rAF loop. When true the next tick
+  // Dirty flag for the surface-mode rAF loop. When true the next tick
   // re-rasterizes; when false the tick only repaints the square overlay
   // on top of the existing snapshot. Listeners and observers below set
   // this true on any change; the loop clears it before each snapshot.
@@ -205,9 +210,9 @@ export function ScreenOverlay({
       context.drawImage(cached.image, 0, 0, canvas.width, canvas.height);
     }
 
-    async function snapshotPortfolio(rasterScale: number): Promise<void> {
+    async function snapshotSurface(rasterScale: number): Promise<void> {
       if (rasterizing) return;
-      const source = portfolioContainerRef.current;
+      const source = surfaceContainerRef.current;
       if (!source || !canvas) return;
       rasterizing = true;
       try {
@@ -219,7 +224,7 @@ export function ScreenOverlay({
         await renderHtmlElementToCanvas(source, canvas, rasterScale);
       } catch (error) {
         if (!context) return;
-        console.warn("[overlay] failed to rasterize Portfolio DOM:", error);
+        console.warn("[overlay] failed to rasterize surface DOM:", error);
         context.fillStyle = "#fafafa";
         context.fillRect(0, 0, canvas.width, canvas.height);
       } finally {
@@ -244,14 +249,14 @@ export function ScreenOverlay({
       paintSquare();
       bumpRevision();
     } else {
-      // Portfolio mode — drive a self-paced rAF loop. The next frame
+      // Surface mode — drive a self-paced rAF loop. The next frame
       // schedules only after the previous snapshot resolves, so we
       // never queue more than one snapDOM capture at a time. The dirty
       // flag gates the snapshot: in steady-state idle the loop only
       // re-paints the square overlay onto the previous snapshot, which
       // is effectively free.
       dirtyRef.current = true;
-      const container = portfolioContainerRef.current;
+      const container = surfaceContainerRef.current;
       let lastRasterizationTimestamp = 0;
       // Sliding-window timestamps (ms) of recent successful rasterizations.
       // Same shape as the compositor's displayFps measurement: count
@@ -333,7 +338,7 @@ export function ScreenOverlay({
           // picked up on the next tick.
           dirtyRef.current = false;
           lastRasterizationTimestamp = now;
-          void snapshotPortfolio(rasterScale).then(() => {
+          void snapshotSurface(rasterScale).then(() => {
             if (cancelled) return;
             paintSquare();
             bumpRevision();
@@ -510,17 +515,18 @@ export function ScreenOverlay({
   const showImage = settings.imageBackgroundEnabled && !settings.hideImageOverlay;
   const showSquare = settings.squareEnabled && !settings.hideSquareOverlay;
   const showColor = settings.colorBackgroundEnabled;
-  // Portfolio stays mounted whenever there's no image/color background,
-  // even when the user has hidden the page overlay — the offscreen
-  // texture-paint pass needs its DOM as a source. visibility:hidden
-  // (vs display:none) keeps layout + computed styles intact so snapDOM
-  // can rasterize the live element.
-  const portfolioMounted = !showImage && !showColor;
-  const portfolioVisible = portfolioMounted && !settings.hidePageOverlay;
+  // The screen surface (Portfolio or LiteInterface) stays mounted
+  // whenever there's no image/color background, even when the user has
+  // hidden the page overlay — the offscreen texture-paint pass needs
+  // its DOM as a source. visibility:hidden (vs display:none) keeps
+  // layout + computed styles intact so snapDOM can rasterize the live
+  // element.
+  const surfaceMounted = !showImage && !showColor;
+  const surfaceVisible = surfaceMounted && !settings.hidePageOverlay;
   // Drop the overlay's white fill when nothing visible should occlude
   // the composite, so the user can see the rendered scene through the
   // screen-rect area.
-  const overlayHasVisibleContent = portfolioVisible || showImage || showColor;
+  const overlayHasVisibleContent = surfaceVisible || showImage || showColor;
 
   return (
     <div
@@ -531,13 +537,13 @@ export function ScreenOverlay({
         background: overlayHasVisibleContent ? undefined : "transparent",
       }}
     >
-      {portfolioMounted && (
+      {surfaceMounted && (
         <div
-          ref={portfolioContainerRef}
+          ref={surfaceContainerRef}
           className="screen-overlay-content"
-          style={portfolioVisible ? undefined : { visibility: "hidden" }}
+          style={surfaceVisible ? undefined : { visibility: "hidden" }}
         >
-          <Portfolio />
+          {children}
         </div>
       )}
       {showImage && (

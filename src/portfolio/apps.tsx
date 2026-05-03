@@ -3,6 +3,9 @@ import { PORTFOLIO } from "./data";
 import { PROJECTS } from "./content/projects";
 import { BLOG_POSTS } from "./content/blog";
 import { Markdown } from "./content/Markdown";
+import { README_MARKDOWN } from "./content/readme";
+import { SettingsView } from "../settings/SettingsView";
+import { CopyLinkButton } from "../shared/CopyLinkButton";
 
 export type AppId =
   | "home"
@@ -12,7 +15,8 @@ export type AppId =
   | "blog"
   | "mystery"
   | "readme"
-  | "contact";
+  | "contact"
+  | "settings";
 
 export interface WindowOpener {
   openApp: (appId: AppId) => void;
@@ -38,6 +42,69 @@ function useOpenApp(): (appId: AppId) => void {
         // Render-only contexts (tests, the texture-rasterization snapshot)
         // don't have an opener — links become no-ops there.
       };
+}
+
+// Selection state for the projects and blog windows is owned by the
+// Portfolio shell so the URL router can drive it directly. The two
+// app components read it through this context. When no provider is
+// mounted (tests, screenshots), the context falls back to a fixed
+// default and selection-change calls are no-ops.
+export interface SelectionState {
+  projectsSelectedId: string;
+  setProjectsSelectedId: (id: string) => void;
+  blogSelectedId: string | null;
+  setBlogSelectedId: (id: string | null) => void;
+}
+
+const SelectionContext = createContext<SelectionState | null>(null);
+
+export function SelectionProvider({
+  state,
+  children,
+}: {
+  state: SelectionState;
+  children: ReactNode;
+}) {
+  return <SelectionContext.Provider value={state}>{children}</SelectionContext.Provider>;
+}
+
+function useProjectsSelection(): {
+  selectedId: string;
+  setSelectedId: (id: string) => void;
+} {
+  const context = useContext(SelectionContext);
+  if (context) {
+    return {
+      selectedId: context.projectsSelectedId,
+      setSelectedId: context.setProjectsSelectedId,
+    };
+  }
+  return {
+    selectedId: PROJECTS[0].id,
+    setSelectedId: () => {
+      // No provider — selection persisted nowhere. Used by the
+      // rasterization snapshot pass and tests.
+    },
+  };
+}
+
+function useBlogSelection(): {
+  selectedId: string | null;
+  setSelectedId: (id: string | null) => void;
+} {
+  const context = useContext(SelectionContext);
+  if (context) {
+    return {
+      selectedId: context.blogSelectedId,
+      setSelectedId: context.setBlogSelectedId,
+    };
+  }
+  return {
+    selectedId: null,
+    setSelectedId: () => {
+      // No provider — same reasoning as useProjectsSelection.
+    },
+  };
 }
 
 // ── Shared chrome bits ─────────────────────────────────────────────
@@ -270,7 +337,7 @@ export function ExperienceApp() {
 
 export function ProjectsApp() {
   const projects = PROJECTS;
-  const [selectedId, setSelectedId] = useState(projects[0].id);
+  const { selectedId, setSelectedId } = useProjectsSelection();
   const [view, setView] = useState<"grid" | "list">("grid");
   const current = projects.find((project) => project.id === selectedId);
 
@@ -286,6 +353,7 @@ export function ProjectsApp() {
             <button className={view === "list" ? "on" : ""} onClick={() => setView("list")}>
               ≡ list
             </button>
+            <CopyLinkButton />
           </div>
         }
       />
@@ -391,7 +459,7 @@ export function ProjectsApp() {
 
 export function BlogApp() {
   const posts = BLOG_POSTS;
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const { selectedId, setSelectedId } = useBlogSelection();
   const selected = selectedId ? posts.find((post) => post.id === selectedId) : null;
 
   return (
@@ -399,11 +467,10 @@ export function BlogApp() {
       <Toolbar
         path={"/home/taggart/Blog" + (selected ? "/" + selected.id + ".md" : "")}
         right={
-          selected && (
-            <div className="vw-toggle mono">
-              <button onClick={() => setSelectedId(null)}>‹ index</button>
-            </div>
-          )
+          <div className="vw-toggle mono">
+            {selected && <button onClick={() => setSelectedId(null)}>‹ index</button>}
+            {selected && <CopyLinkButton />}
+          </div>
         }
       />
       <div className="dol-body">
@@ -514,59 +581,27 @@ export function ReadmeApp() {
     <div className="page-pad">
       <Toolbar path="/home/taggart/README.md" />
       <div className="doc-pad readme">
-        <div className="readme-meta mono">README.md · plain text · 2 KB</div>
-        <h1 className="serif">tm-portfolio</h1>
-        <p className="lede">
-          Welcome. This site is laid out like a desktop because I think it's a more honest analogy
-          for the way information actually fits together.
-        </p>
-
-        <h3 className="mono"># navigating</h3>
-        <ul>
-          <li>
-            <b>Double-click</b> a folder on the desktop to open it.
-          </li>
-          <li>
-            Use the <b>taskbar</b> at the bottom to switch between open windows.
-          </li>
-          <li>
-            Click the <b>app launcher</b> (bottom-left) to open any section directly.
-          </li>
-          <li>
-            Press <kbd>Esc</kbd> to close the focused window.
-          </li>
-        </ul>
-
-        <h3 className="mono"># what's where</h3>
-        <ul>
-          <li>
-            <b>About Me</b> — bio, fact sheet, links
-          </li>
-          <li>
-            <b>Experience</b> — work / school timeline
-          </li>
-          <li>
-            <b>Projects</b> — shipped & in-progress work
-          </li>
-          <li>
-            <b>Blog</b> — posts and writeups
-          </li>
-          <li>
-            <b>Mystery</b> — things in development I can't fully explain
-          </li>
-        </ul>
-
-        <h3 className="mono"># for skimmers</h3>
-        <p>
-          Each section opens with a short summary at the top. The Projects window is split — pick a
-          card on the left, read the gist on the right.
-        </p>
+        <div className="readme-meta mono">README.md · plain text</div>
+        <Markdown>{README_MARKDOWN}</Markdown>
       </div>
     </div>
   );
 }
 
 // ── Contact ──────────────────────────────────────────────────────
+
+// ── Settings ─────────────────────────────────────────────────────
+
+export function SettingsApp() {
+  return (
+    <div className="page-pad">
+      <Toolbar path="/home/taggart/Settings" />
+      <div className="doc-pad readme">
+        <SettingsView />
+      </div>
+    </div>
+  );
+}
 
 export function ContactApp() {
   const about = PORTFOLIO.about;
