@@ -483,10 +483,6 @@ export function Portfolio({ ecoMode, onToggleEcoMode }: PortfolioProps) {
                       <div className="lh-sub mono">taggart@tm-portfolio</div>
                     </div>
                   </div>
-                  <div className="launcher-search mono">
-                    <span className="ls-prefix">⌕</span>
-                    <span className="ls-placeholder">type / pick / open ...</span>
-                  </div>
                   <div className="launcher-section mono">APPLICATIONS</div>
                   <div className="launcher-grid">
                     {(Object.entries(APPS) as Array<[AppId, AppMeta]>)

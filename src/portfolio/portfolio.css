@@ -399,20 +399,6 @@
   font-size: 27.5px;
   color: var(--fg-3);
 }
-.portfolio .launcher-search {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  background: rgba(0, 0, 0, 0.3);
-  border: 1px solid var(--border-soft);
-  border-radius: 6px;
-  padding: 6px 10px;
-  color: var(--fg-3);
-  font-size: 30px;
-}
-.portfolio .ls-prefix {
-  color: var(--fg-3);
-}
 .portfolio .launcher-section {
   font-size: 12.5px;
   letter-spacing: 0.14em;
