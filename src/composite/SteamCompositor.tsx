@@ -9,6 +9,7 @@ import {
   steamFps,
   steamFrameCount,
 } from "../config";
+import { loadAsset, loadAssetAsImage } from "../loading/loadAsset";
 import { downsampleFragmentShaderSource, upsampleFragmentShaderSource } from "./shader";
 import { steamFragmentShaderSource, steamVertexShaderSource } from "./steamShader";
 
@@ -302,38 +303,23 @@ export function SteamCompositor({
     let renderingStarted = false;
     let manifestSeen = false;
     const renderStartTimestamp = performance.now();
-    const atlasImage = new Image();
-    atlasImage.crossOrigin = "anonymous";
-    atlasImage.addEventListener(
-      "load",
-      () => {
+    loadAssetAsImage("steam_atlas.png", steamAtlasPath)
+      .then((atlasImage) => {
         if (cancelled) return;
         gl.activeTexture(gl.TEXTURE0 + STEAM_ATLAS_UNIT);
         gl.bindTexture(gl.TEXTURE_2D, atlasTexture);
         gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, atlasImage);
         atlasTextureReady = true;
         maybeStartRendering();
-      },
-      { once: true },
-    );
-    atlasImage.addEventListener(
-      "error",
-      () => {
-        console.warn("[steam] failed to load steam_atlas.png");
-      },
-      { once: true },
-    );
-    atlasImage.src = steamAtlasPath;
-
-    fetch(steamAtlasMetaPath)
-      .then((response) => {
-        if (!response.ok) {
-          throw new Error(`steam_atlas_meta.json fetch returned ${response.status}`);
-        }
-        return response.json() as Promise<SteamAtlasMeta>;
       })
-      .then((meta) => {
+      .catch((error) => {
+        console.warn("[steam] failed to load steam_atlas.png:", error);
+      });
+
+    loadAsset("steam_atlas_meta.json", steamAtlasMetaPath)
+      .then((buffer) => {
         if (cancelled) return;
+        const meta = JSON.parse(new TextDecoder().decode(buffer)) as SteamAtlasMeta;
         if (typeof meta.whitelightScale === "number" && Number.isFinite(meta.whitelightScale)) {
           whitelightScale = meta.whitelightScale;
         } else {
@@ -346,15 +332,10 @@ export function SteamCompositor({
         console.warn("[steam] failed to load steam_atlas_meta.json:", error);
       });
 
-    fetch(steamCellsManifestPath)
-      .then((response) => {
-        if (!response.ok) {
-          throw new Error(`steam_cells_manifest.json fetch returned ${response.status}`);
-        }
-        return response.json() as Promise<SteamManifest>;
-      })
-      .then((manifest) => {
+    loadAsset("steam_cells_manifest.json", steamCellsManifestPath)
+      .then((buffer) => {
         if (cancelled) return;
+        const manifest = JSON.parse(new TextDecoder().decode(buffer)) as SteamManifest;
         manifestSeen = true;
         if (manifest.cellsPerSide !== 3) {
           console.warn(

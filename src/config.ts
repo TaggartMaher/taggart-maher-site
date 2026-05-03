@@ -58,6 +58,18 @@ export const steamAtlasPath = "/composite/steam_atlas.png";
 export const steamAtlasMetaPath = "/composite/steam_atlas_meta.json";
 export const steamCellsManifestPath = "/composite/steam_cells_manifest.json";
 
+// Pre-registered with the loading tracker so the loading screen shows
+// the full asset list at 0% before the compositor begins fetching. The
+// names are surfaced verbatim in the UI; URLs match the constants
+// above.
+export const LOADABLE_ASSETS: { name: string; url: string }[] = [
+  { name: "beauty.png", url: beautyImagePath },
+  { name: "position.exr", url: positionImagePath },
+  { name: "steam_atlas.png", url: steamAtlasPath },
+  { name: "steam_atlas_meta.json", url: steamAtlasMetaPath },
+  { name: "steam_cells_manifest.json", url: steamCellsManifestPath },
+];
+
 // Number of pre-baked steam frames in the atlas. Matches the FRAME_END
 // in blender/render_steam.sh (96 frames at 24 fps = 4 s loop).
 export const steamFrameCount = 24;

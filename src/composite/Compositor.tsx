@@ -1,5 +1,7 @@
 import { useEffect, useRef } from "react";
 import { beautyImagePath, positionImagePath } from "../config";
+import { loadAsset, loadAssetAsImage } from "../loading/loadAsset";
+import { loadingTracker } from "../loading/LoadingTracker";
 import { decodeExr } from "./decodeExr";
 import type { PerfMetrics } from "./perfMetrics";
 import {
@@ -94,7 +96,6 @@ export function Compositor({
   screenSourceRevisionRef,
 }: CompositorProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const beautyImageRef = useRef<HTMLImageElement | null>(null);
   const screenBlurRadiusPxRef = useRef(screenBlurRadiusPx);
   screenBlurRadiusPxRef.current = screenBlurRadiusPx;
   const uStretchRef = useRef(uStretch);
@@ -116,8 +117,7 @@ export function Compositor({
 
   useEffect(() => {
     const canvas = canvasRef.current;
-    const beautyImage = beautyImageRef.current;
-    if (!canvas || !beautyImage) return;
+    if (!canvas) return;
 
     const gl = canvas.getContext("webgl2", { antialias: false, premultipliedAlpha: false });
     if (!gl) {
@@ -270,8 +270,10 @@ export function Compositor({
 
     let cancelled = false;
     let animationFrameHandle: number | null = null;
+    let beautyImage: HTMLImageElement | null = null;
     let beautyImageUploaded = false;
     let positionTextureReady = false;
+    let firstFrameMarked = false;
 
     const timerQueryExtension = gl.getExtension("EXT_disjoint_timer_query_webgl2");
     const pendingTimerQueries: WebGLQuery[] = [];
@@ -324,13 +326,7 @@ export function Compositor({
       }
     }
 
-    fetch(positionImagePath)
-      .then((response) => {
-        if (!response.ok) {
-          throw new Error(`fetch returned status ${response.status}`);
-        }
-        return response.arrayBuffer();
-      })
+    loadAsset("position.exr", positionImagePath)
       .then((buffer) => {
         if (cancelled || !gl) return;
         const decoded = decodeExr(buffer);
@@ -374,7 +370,9 @@ export function Compositor({
     }
 
     function renderFrame(): void {
-      if (cancelled || !gl || !canvas || !beautyImage) return;
+      if (cancelled || !gl || !canvas) return;
+      const beautyImageLocal = beautyImage;
+      if (!beautyImageLocal) return;
 
       const cpuStartMs = performance.now();
       recentFrameTimestamps.push(cpuStartMs);
@@ -392,10 +390,10 @@ export function Compositor({
         }
       }
 
-      if (!beautyImageUploaded && beautyImage.complete && beautyImage.naturalWidth > 0) {
+      if (!beautyImageUploaded && beautyImageLocal.complete && beautyImageLocal.naturalWidth > 0) {
         gl.activeTexture(gl.TEXTURE0 + BEAUTY_UNIT);
         gl.bindTexture(gl.TEXTURE_2D, beautyTexture);
-        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, beautyImage);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, beautyImageLocal);
         beautyImageUploaded = true;
       }
 
@@ -493,6 +491,11 @@ export function Compositor({
       gl.drawArrays(gl.TRIANGLES, 0, 6);
       gl.bindVertexArray(null);
 
+      if (!firstFrameMarked) {
+        firstFrameMarked = true;
+        loadingTracker.markFirstFrame();
+      }
+
       if (timerQueryExtension && activeTimerQuery) {
         gl.endQuery(timerQueryExtension.TIME_ELAPSED_EXT);
         pendingTimerQueries.push(activeTimerQuery);
@@ -525,15 +528,18 @@ export function Compositor({
       scheduleNextFrame();
     }
 
-    if (beautyImage.complete && beautyImage.naturalWidth > 0) {
-      maybeStartRendering();
-    } else {
-      beautyImage.addEventListener("load", maybeStartRendering, { once: true });
-    }
+    loadAssetAsImage("beauty.png", beautyImagePath)
+      .then((image) => {
+        if (cancelled) return;
+        beautyImage = image;
+        maybeStartRendering();
+      })
+      .catch((error) => {
+        console.warn("[compositor] failed to load beauty.png:", error);
+      });
 
     return () => {
       cancelled = true;
-      beautyImage.removeEventListener("load", maybeStartRendering);
       if (animationFrameHandle !== null) {
         cancelAnimationFrame(animationFrameHandle);
       }
@@ -553,16 +559,5 @@ export function Compositor({
     };
   }, [screenSourceCanvasRef, perfMetricsRef, screenSourceRevisionRef]);
 
-  return (
-    <>
-      <canvas ref={canvasRef} className="compositor-canvas" />
-      <img
-        ref={beautyImageRef}
-        src={beautyImagePath}
-        alt=""
-        crossOrigin="anonymous"
-        style={{ display: "none" }}
-      />
-    </>
-  );
+  return <canvas ref={canvasRef} className="compositor-canvas" />;
 }

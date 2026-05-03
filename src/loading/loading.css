@@ -1,0 +1,147 @@
+.loading-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: var(--bg, #1c1916);
+  color: var(--text, #e6dccd);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: "JetBrains Mono", monospace;
+  opacity: 1;
+  transition: opacity 1500ms linear;
+}
+
+.loading-overlay[data-state="fading"] {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.loading-card {
+  width: 100%;
+  max-width: 520px;
+  padding: 24px;
+  box-sizing: border-box;
+}
+
+.loading-title {
+  font-family: "JetBrains Mono", monospace;
+  font-variant: small-caps;
+  letter-spacing: 0.08em;
+  font-size: 14px;
+  color: var(--accent-muted, #9d8d76);
+  margin: 0 0 24px 0;
+  text-align: center;
+}
+
+.loading-overall {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.loading-bar {
+  flex: 1;
+  height: 8px;
+  background: var(--surface, #252220);
+  border: 1px solid var(--rule, #3a342e);
+}
+
+.loading-bar-fill {
+  height: 100%;
+  background: var(--accent, #c9a87a);
+}
+
+.loading-overall-percent {
+  font-size: 13px;
+  color: var(--text, #e6dccd);
+  min-width: 4ch;
+  text-align: right;
+}
+
+.loading-asset-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-size: 12px;
+}
+
+.loading-asset-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--rule, #3a342e);
+}
+
+.loading-asset-row:last-child {
+  border-bottom: none;
+}
+
+.loading-asset-name {
+  color: var(--accent-muted, #9d8d76);
+}
+
+.loading-asset-status {
+  color: var(--text, #e6dccd);
+}
+
+.loading-asset-status[data-error="true"] {
+  color: var(--warn, #d4a957);
+}
+
+.loading-error-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 24px;
+  justify-content: center;
+}
+
+.loading-button {
+  background: transparent;
+  border: 1px solid var(--accent, #c9a87a);
+  color: var(--accent, #c9a87a);
+  padding: 10px 16px;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 13px;
+  cursor: pointer;
+  min-height: 44px;
+}
+
+.loading-button:hover {
+  background: var(--accent, #c9a87a);
+  color: var(--bg, #1c1916);
+}
+
+.loading-gate {
+  font-family: "Noto Sans", system-ui, sans-serif;
+  max-width: 560px;
+  padding: 24px;
+  box-sizing: border-box;
+  line-height: 1.6;
+}
+
+.loading-gate h2 {
+  font-family: "Noto Serif", Georgia, serif;
+  font-weight: 600;
+  font-size: 22px;
+  margin: 0 0 12px 0;
+}
+
+.loading-gate-reason {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 13px;
+  color: var(--accent-muted, #9d8d76);
+  margin: 0 0 20px 0;
+  white-space: pre-wrap;
+}
+
+.loading-gate p {
+  margin: 0 0 20px 0;
+}
+
+.loading-gate-actions {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
