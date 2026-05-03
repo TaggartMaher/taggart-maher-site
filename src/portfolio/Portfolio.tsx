@@ -158,12 +158,29 @@ function formatDate(date: Date): string {
   });
 }
 
-export function Portfolio() {
+interface PortfolioProps {
+  // Reflects the user's eco-mode debug setting. The taskbar toggle
+  // button reads this for its label and calls back through
+  // `onToggleEcoMode` to flip it.
+  ecoMode: boolean;
+  onToggleEcoMode: () => void;
+}
+
+export function Portfolio({ ecoMode, onToggleEcoMode }: PortfolioProps) {
   const router = useRouter();
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
   const [windows, setWindows] = useState<WindowState[]>([]);
-  const [zCounter, setZCounter] = useState(10);
+  // zCounter is read from inside callbacks but never rendered; a ref
+  // avoids re-rendering Portfolio every time we bring a window forward,
+  // and keeps the per-window callbacks stable so React.memo'd PWindow
+  // can bail out on unrelated drag updates.
+  const zCounterRef = useRef(10);
+  // Mirror containerSize so openApp can stay a stable useCallback —
+  // openApp reads it for first-time window placement only, so a ref
+  // read per call is enough.
+  const containerSizeRef = useRef(containerSize);
+  containerSizeRef.current = containerSize;
   const [launcherOpen, setLauncherOpen] = useState(false);
   const [now, setNow] = useState<Date>(() => new Date());
   const [showStartHint, setShowStartHint] = useState(true);
@@ -203,48 +220,47 @@ export function Portfolio() {
     return () => clearInterval(interval);
   }, []);
 
-  const openApp = useCallback(
-    (appId: AppId, override?: OpenAppOverride): void => {
-      setShowStartHint(false);
-      setLauncherOpen(false);
-      setWindows((previous) => {
-        const nextZ = zCounter + 1;
-        setZCounter(nextZ);
-        const existing = previous.find((window) => window.appId === appId);
-        if (existing) {
-          return previous.map((window) =>
-            window.appId === appId ? { ...window, zIndex: nextZ, minimized: false } : window,
-          );
-        }
-        const meta = APPS[appId];
-        const scale = Math.min(containerSize.width / REFERENCE_CONTAINER_WIDTH, 1);
-        const scaledWidth = override?.width ?? Math.round(meta.defaultWidth * scale);
-        const scaledHeight = override?.height ?? Math.round(meta.defaultHeight * scale);
-        const usableHeight = containerSize.height - TASKBAR_HEIGHT;
-        const clampedWidth = Math.max(360, Math.min(scaledWidth, containerSize.width - 20));
-        const clampedHeight = Math.max(280, Math.min(scaledHeight, usableHeight - 20));
-        const positionX =
-          override?.positionX ?? Math.max(20, Math.round((containerSize.width - clampedWidth) / 2));
-        const positionY =
-          override?.positionY ?? Math.max(20, Math.round((usableHeight - clampedHeight) / 2));
-        return [
-          ...previous,
-          {
-            id: appId + "-" + Date.now(),
-            appId,
-            positionX,
-            positionY,
-            width: clampedWidth,
-            height: clampedHeight,
-            zIndex: nextZ,
-            minimized: false,
-            maximized: false,
-          },
-        ];
-      });
-    },
-    [zCounter, containerSize.width, containerSize.height],
-  );
+  const openApp = useCallback((appId: AppId, override?: OpenAppOverride): void => {
+    setShowStartHint(false);
+    setLauncherOpen(false);
+    setWindows((previous) => {
+      zCounterRef.current += 1;
+      const nextZ = zCounterRef.current;
+      const existing = previous.find((window) => window.appId === appId);
+      if (existing) {
+        return previous.map((window) =>
+          window.appId === appId ? { ...window, zIndex: nextZ, minimized: false } : window,
+        );
+      }
+      const meta = APPS[appId];
+      const containerWidth = containerSizeRef.current.width;
+      const containerHeight = containerSizeRef.current.height;
+      const scale = Math.min(containerWidth / REFERENCE_CONTAINER_WIDTH, 1);
+      const scaledWidth = override?.width ?? Math.round(meta.defaultWidth * scale);
+      const scaledHeight = override?.height ?? Math.round(meta.defaultHeight * scale);
+      const usableHeight = containerHeight - TASKBAR_HEIGHT;
+      const clampedWidth = Math.max(360, Math.min(scaledWidth, containerWidth - 20));
+      const clampedHeight = Math.max(280, Math.min(scaledHeight, usableHeight - 20));
+      const positionX =
+        override?.positionX ?? Math.max(20, Math.round((containerWidth - clampedWidth) / 2));
+      const positionY =
+        override?.positionY ?? Math.max(20, Math.round((usableHeight - clampedHeight) / 2));
+      return [
+        ...previous,
+        {
+          id: appId + "-" + Date.now(),
+          appId,
+          positionX,
+          positionY,
+          width: clampedWidth,
+          height: clampedHeight,
+          zIndex: nextZ,
+          minimized: false,
+          maximized: false,
+        },
+      ];
+    });
+  }, []);
 
   // URL → state. Whenever the live router path changes (initial mount
   // included) translate it into a desktop window action: open or focus
@@ -296,45 +312,48 @@ export function Portfolio() {
     return () => window.removeEventListener("keydown", handleKey);
   }, [launcherOpen]);
 
-  function closeWindow(id: string): void {
+  // All window mutations go through stable useCallbacks so React.memo'd
+  // PWindow only reconciles when its own props change — a drag of one
+  // window leaves the others untouched.
+  const closeWindow = useCallback((id: string): void => {
     setWindows((previous) => previous.filter((window) => window.id !== id));
-  }
+  }, []);
 
-  function focusWindow(id: string): void {
+  const focusWindow = useCallback((id: string): void => {
     setWindows((previous) => {
-      const nextZ = zCounter + 1;
-      setZCounter(nextZ);
+      zCounterRef.current += 1;
+      const nextZ = zCounterRef.current;
       return previous.map((window) =>
         window.id === id ? { ...window, zIndex: nextZ, minimized: false } : window,
       );
     });
-  }
+  }, []);
 
-  function minimizeWindow(id: string): void {
+  const minimizeWindow = useCallback((id: string): void => {
     setWindows((previous) =>
       previous.map((window) => (window.id === id ? { ...window, minimized: true } : window)),
     );
-  }
+  }, []);
 
-  function toggleMaximize(id: string): void {
+  const toggleMaximize = useCallback((id: string): void => {
     setWindows((previous) =>
       previous.map((window) =>
         window.id === id ? { ...window, maximized: !window.maximized } : window,
       ),
     );
-  }
+  }, []);
 
-  function moveWindow(id: string, positionX: number, positionY: number): void {
+  const moveWindow = useCallback((id: string, positionX: number, positionY: number): void => {
     setWindows((previous) =>
       previous.map((window) => (window.id === id ? { ...window, positionX, positionY } : window)),
     );
-  }
+  }, []);
 
-  function resizeWindow(id: string, width: number, height: number): void {
+  const resizeWindow = useCallback((id: string, width: number, height: number): void => {
     setWindows((previous) =>
       previous.map((window) => (window.id === id ? { ...window, width, height } : window)),
     );
-  }
+  }, []);
 
   const focusedWindow =
     windows.length > 0
@@ -390,12 +409,10 @@ export function Portfolio() {
     [projectsSelectedId, blogSelectedId],
   );
 
-  function switchToLightweightMode(): void {
-    window.location.assign(window.location.pathname + "?mode=lightweight");
-  }
+  const windowOpener = useMemo(() => ({ openApp }), [openApp]);
 
   return (
-    <WindowOpenerProvider opener={{ openApp }}>
+    <WindowOpenerProvider opener={windowOpener}>
       <SelectionProvider state={selectionState}>
         <InternalLinkProvider onNavigate={handleInternalNavigate}>
           <div className="portfolio" ref={containerRef}>
@@ -430,6 +447,7 @@ export function Portfolio() {
               return (
                 <PWindow
                   key={window.id}
+                  windowId={window.id}
                   title={meta.title}
                   icon={meta.icon}
                   positionX={window.positionX}
@@ -442,12 +460,12 @@ export function Portfolio() {
                   maximized={window.maximized}
                   containerWidth={containerSize.width}
                   containerHeight={containerSize.height}
-                  onFocus={() => focusWindow(window.id)}
-                  onClose={() => closeWindow(window.id)}
-                  onMinimize={() => minimizeWindow(window.id)}
-                  onMaximize={() => toggleMaximize(window.id)}
-                  onMove={(positionX, positionY) => moveWindow(window.id, positionX, positionY)}
-                  onResize={(width, height) => resizeWindow(window.id, width, height)}
+                  onFocus={focusWindow}
+                  onClose={closeWindow}
+                  onMinimize={minimizeWindow}
+                  onMaximize={toggleMaximize}
+                  onMove={moveWindow}
+                  onResize={resizeWindow}
                 >
                   <Component />
                 </PWindow>
@@ -540,11 +558,13 @@ export function Portfolio() {
               <div className="tb-mode-buttons">
                 <button
                   type="button"
-                  className="tb-mode-button tb-lightweight mono"
-                  title="Switch to a simpler interface inside the same scene."
-                  onClick={switchToLightweightMode}
+                  className="tb-mode-button tb-eco mono"
+                  title={
+                    ecoMode ? "Restore full-quality rendering." : "Reduce GPU and bandwidth use."
+                  }
+                  onClick={onToggleEcoMode}
                 >
-                  🌿 LIGHTWEIGHT MODE
+                  🌿 {ecoMode ? "DISABLE ECO MODE" : "ECO MODE"}
                 </button>
                 <button
                   type="button"

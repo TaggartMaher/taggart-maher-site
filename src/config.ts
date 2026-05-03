@@ -56,19 +56,35 @@ export const beautyImagePath = "/composite/beauty.png";
 export const positionImagePath = "/composite/position.exr";
 export const steamAtlasPath = "/composite/steam_atlas.png";
 export const steamAtlasMetaPath = "/composite/steam_atlas_meta.json";
-export const steamCellsManifestPath = "/composite/steam_cells_manifest.json";
+
+interface LoadableAsset {
+  name: string;
+  url: string;
+}
+
+// The static scene + bounce-light textures are needed in every mode.
+const CORE_LOADABLE_ASSETS: LoadableAsset[] = [
+  { name: "beauty.png", url: beautyImagePath },
+  { name: "position.exr", url: positionImagePath },
+];
+
+// The steam atlas is only fetched when the SteamCompositor is mounted.
+// Eco mode and a disabled coffee-steam toggle both skip it — no point
+// downloading 7 MB the GPU is never going to sample.
+const STEAM_LOADABLE_ASSETS: LoadableAsset[] = [
+  { name: "steam_atlas.png", url: steamAtlasPath },
+  { name: "steam_atlas_meta.json", url: steamAtlasMetaPath },
+];
 
 // Pre-registered with the loading tracker so the loading screen shows
 // the full asset list at 0% before the compositor begins fetching. The
 // names are surfaced verbatim in the UI; URLs match the constants
 // above.
-export const LOADABLE_ASSETS: { name: string; url: string }[] = [
-  { name: "beauty.png", url: beautyImagePath },
-  { name: "position.exr", url: positionImagePath },
-  { name: "steam_atlas.png", url: steamAtlasPath },
-  { name: "steam_atlas_meta.json", url: steamAtlasMetaPath },
-  { name: "steam_cells_manifest.json", url: steamCellsManifestPath },
-];
+export const LOADABLE_ASSETS: LoadableAsset[] = [...CORE_LOADABLE_ASSETS, ...STEAM_LOADABLE_ASSETS];
+
+export function getLoadableAssets(includeSteam: boolean): LoadableAsset[] {
+  return includeSteam ? LOADABLE_ASSETS : CORE_LOADABLE_ASSETS;
+}
 
 // Number of pre-baked steam frames in the atlas. Matches the FRAME_END
 // in blender/render_steam.sh (96 frames at 24 fps = 4 s loop).
@@ -98,14 +114,25 @@ export function parseEnvFloat(rawValue: unknown, fallback: number): number {
 // re-rasterizes faster than this, even if the display refresh rate is
 // higher (e.g. 144 Hz). The bounce light is heavily blurred so the
 // reader can't tell the rasterizer isn't running per-display-refresh.
-export const rasterizerFps = 60;
+export const rasterizerFps = 24;
 
-// Multiplier applied to the rasterizer's snapDOM scale when the
-// user-toggled `ecoMode` debug setting is on. Smaller multipliers cut
-// SVG raster cost roughly quadratically at the cost of a softer source
-// for the bounce-light blur — usually invisible after the dual-Kawase
-// chain on the way to the emitter.
-export const ecoModeRasterizerScaleMultiplier = 0.025;
+// Target FPS when the user-toggled `ecoMode` debug setting is on. Half
+// the normal rate; the bounce light's dual-Kawase blur smooths over
+// the slower update without visible stepping.
+export const rasterizerFpsEcoMode = 12;
+
+// Cap on the compositor canvas's effective devicePixelRatio in eco
+// mode. The fragment shader cost scales with pixel count, so a 2× DPR
+// display does 4× the per-frame shader work — capping at 1.0 brings
+// that back to baseline. The composite is upscaled by the browser to
+// CSS pixel size, which the heavy bounce-light blur masks anyway.
+export const compositorEcoModeMaxDpr = 1.0;
+
+// Target FPS cap for the static compositor in eco mode. The beauty +
+// position textures are static, so cutting render frequency just
+// makes the user-content reflection update at a slower cadence — the
+// bounce light is dual-Kawase-blurred anyway, so 30 Hz is plenty.
+export const compositorFpsEcoMode = 30;
 
 export const steamCrop = {
   minX: parseEnvFloat(import.meta.env.STEAM_CROP_MIN_X, 0.375),

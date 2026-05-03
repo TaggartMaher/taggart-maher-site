@@ -1,9 +1,10 @@
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import "../composite/compositor.css";
 import { Compositor } from "../composite/Compositor";
 import { makeEmptyPerfMetrics } from "../composite/perfMetrics";
 import { ScreenOverlay } from "../composite/ScreenOverlay";
 import { SteamCompositor } from "../composite/SteamCompositor";
+import { getLoadableAssets } from "../config";
 import { DebugMenu } from "../debug/DebugMenu";
 import { defaultDebugSettings, type DebugSettings } from "../debug/debugSettings";
 import { LiteInterface } from "../lite/LiteInterface";
@@ -27,11 +28,13 @@ export function LightweightEntry({ modeReason }: LightweightEntryProps) {
   const screenSourceRevisionRef = useRef(0);
   const perfMetricsRef = useRef(makeEmptyPerfMetrics());
   const [debugSettings, setDebugSettings] = useState<DebugSettings>(defaultDebugSettings);
+  const steamMounted = !debugSettings.ecoMode && debugSettings.coffeeSteamEnabled;
+  const requiredAssets = useMemo(() => getLoadableAssets(steamMounted), [steamMounted]);
 
   return (
     <ModeProvider modeReason={modeReason}>
       <Router>
-        <CompositorBoot modeReason={modeReason}>
+        <CompositorBoot modeReason={modeReason} requiredAssets={requiredAssets}>
           <Compositor
             screenSourceCanvasRef={screenSourceCanvasRef}
             screenSourceRevisionRef={screenSourceRevisionRef}
@@ -44,6 +47,7 @@ export function LightweightEntry({ modeReason }: LightweightEntryProps) {
             screenSaturation={debugSettings.screenSaturation}
             screenContrast={debugSettings.screenContrast}
             screenBrightness={debugSettings.screenBrightness}
+            ecoMode={debugSettings.ecoMode}
             perfMetricsRef={perfMetricsRef}
           />
           <ScreenOverlay
@@ -55,19 +59,21 @@ export function LightweightEntry({ modeReason }: LightweightEntryProps) {
           >
             <LiteInterface />
           </ScreenOverlay>
-          <SteamCompositor
-            screenSourceCanvasRef={screenSourceCanvasRef}
-            screenSourceRevisionRef={screenSourceRevisionRef}
-            ecoMode={debugSettings.ecoMode}
-            enabled={debugSettings.coffeeSteamEnabled}
-            intensity={debugSettings.coffeeSteamIntensity}
-            maxIntensity={debugSettings.coffeeSteamMaxIntensity}
-            opacity={debugSettings.coffeeSteamOpacity}
-            screenBlurRadiusPx={debugSettings.coffeeSteamScreenBlurRadiusPx}
-            framePaused={debugSettings.coffeeSteamFramePaused}
-            frameOverride={debugSettings.coffeeSteamFrameOverride}
-            showAtlas={debugSettings.coffeeSteamShowAtlas}
-          />
+          {steamMounted && (
+            <SteamCompositor
+              screenSourceCanvasRef={screenSourceCanvasRef}
+              screenSourceRevisionRef={screenSourceRevisionRef}
+              ecoMode={debugSettings.ecoMode}
+              enabled={debugSettings.coffeeSteamEnabled}
+              intensity={debugSettings.coffeeSteamIntensity}
+              maxIntensity={debugSettings.coffeeSteamMaxIntensity}
+              opacity={debugSettings.coffeeSteamOpacity}
+              screenBlurRadiusPx={debugSettings.coffeeSteamScreenBlurRadiusPx}
+              framePaused={debugSettings.coffeeSteamFramePaused}
+              frameOverride={debugSettings.coffeeSteamFrameOverride}
+              showAtlas={debugSettings.coffeeSteamShowAtlas}
+            />
+          )}
           <DebugMenu
             settings={debugSettings}
             onChange={setDebugSettings}

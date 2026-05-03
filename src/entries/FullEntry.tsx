@@ -1,9 +1,10 @@
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import "../composite/compositor.css";
 import { Compositor } from "../composite/Compositor";
 import { makeEmptyPerfMetrics } from "../composite/perfMetrics";
 import { ScreenOverlay } from "../composite/ScreenOverlay";
 import { SteamCompositor } from "../composite/SteamCompositor";
+import { getLoadableAssets } from "../config";
 import { DebugMenu } from "../debug/DebugMenu";
 import { defaultDebugSettings, type DebugSettings } from "../debug/debugSettings";
 import { CompositorBoot } from "../loading/CompositorBoot";
@@ -25,11 +26,20 @@ export function FullEntry({ modeReason }: FullEntryProps) {
   const screenSourceRevisionRef = useRef(0);
   const perfMetricsRef = useRef(makeEmptyPerfMetrics());
   const [debugSettings, setDebugSettings] = useState<DebugSettings>(defaultDebugSettings);
+  // Steam mounts (and its 7 MB atlas + framebuffers + WebGL context)
+  // only when both the user toggle and eco mode allow it. Filtering
+  // the loading-screen asset list keeps the boot from hanging on a
+  // download we never intend to make.
+  const steamMounted = !debugSettings.ecoMode && debugSettings.coffeeSteamEnabled;
+  const requiredAssets = useMemo(() => getLoadableAssets(steamMounted), [steamMounted]);
+  function handleToggleEcoMode(): void {
+    setDebugSettings((previous) => ({ ...previous, ecoMode: !previous.ecoMode }));
+  }
 
   return (
     <ModeProvider modeReason={modeReason}>
       <Router>
-        <CompositorBoot modeReason={modeReason}>
+        <CompositorBoot modeReason={modeReason} requiredAssets={requiredAssets}>
           <Compositor
             screenSourceCanvasRef={screenSourceCanvasRef}
             screenSourceRevisionRef={screenSourceRevisionRef}
@@ -42,6 +52,7 @@ export function FullEntry({ modeReason }: FullEntryProps) {
             screenSaturation={debugSettings.screenSaturation}
             screenContrast={debugSettings.screenContrast}
             screenBrightness={debugSettings.screenBrightness}
+            ecoMode={debugSettings.ecoMode}
             perfMetricsRef={perfMetricsRef}
           />
           <ScreenOverlay
@@ -51,21 +62,23 @@ export function FullEntry({ modeReason }: FullEntryProps) {
             textureRevisionRef={screenSourceRevisionRef}
             perfMetricsRef={perfMetricsRef}
           >
-            <Portfolio />
+            <Portfolio ecoMode={debugSettings.ecoMode} onToggleEcoMode={handleToggleEcoMode} />
           </ScreenOverlay>
-          <SteamCompositor
-            screenSourceCanvasRef={screenSourceCanvasRef}
-            screenSourceRevisionRef={screenSourceRevisionRef}
-            ecoMode={debugSettings.ecoMode}
-            enabled={debugSettings.coffeeSteamEnabled}
-            intensity={debugSettings.coffeeSteamIntensity}
-            maxIntensity={debugSettings.coffeeSteamMaxIntensity}
-            opacity={debugSettings.coffeeSteamOpacity}
-            screenBlurRadiusPx={debugSettings.coffeeSteamScreenBlurRadiusPx}
-            framePaused={debugSettings.coffeeSteamFramePaused}
-            frameOverride={debugSettings.coffeeSteamFrameOverride}
-            showAtlas={debugSettings.coffeeSteamShowAtlas}
-          />
+          {steamMounted && (
+            <SteamCompositor
+              screenSourceCanvasRef={screenSourceCanvasRef}
+              screenSourceRevisionRef={screenSourceRevisionRef}
+              ecoMode={debugSettings.ecoMode}
+              enabled={debugSettings.coffeeSteamEnabled}
+              intensity={debugSettings.coffeeSteamIntensity}
+              maxIntensity={debugSettings.coffeeSteamMaxIntensity}
+              opacity={debugSettings.coffeeSteamOpacity}
+              screenBlurRadiusPx={debugSettings.coffeeSteamScreenBlurRadiusPx}
+              framePaused={debugSettings.coffeeSteamFramePaused}
+              frameOverride={debugSettings.coffeeSteamFrameOverride}
+              showAtlas={debugSettings.coffeeSteamShowAtlas}
+            />
+          )}
           <DebugMenu
             settings={debugSettings}
             onChange={setDebugSettings}

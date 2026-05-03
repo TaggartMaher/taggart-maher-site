@@ -73,10 +73,14 @@ export interface DebugSettings {
   // Render the raw atlas into a corner overlay for debugging atlas
   // decode / packing.
   coffeeSteamShowAtlas: boolean;
-  // User-controlled performance toggle. When on, the screen-content
-  // rasterizer renders at `ecoModeRasterizerScaleMultiplier × normal
-  // scale` and the coffee-steam pass is suppressed entirely. Off by
-  // default; the user flips it on iGPUs / under load.
+  // User-controlled performance toggle. When on:
+  //   - the screen-content rasterizer drops to `rasterizerFpsEcoMode`
+  //     and the texture canvas is allocated at half size
+  //   - the static compositor caps DPR at `compositorEcoModeMaxDpr`
+  //     and FPS at `compositorFpsEcoMode`
+  //   - the SteamCompositor unmounts entirely (no atlas, no GPU state)
+  // Off by default; the user flips it on from the taskbar when they
+  // need to dial back GPU + bandwidth.
   ecoMode: boolean;
 }
 
