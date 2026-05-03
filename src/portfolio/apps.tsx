@@ -277,11 +277,6 @@ export function AboutApp() {
             </tbody>
           </table>
 
-          <h3>Long form</h3>
-          {about.longform.map((paragraph, index) => (
-            <p key={index}>{paragraph}</p>
-          ))}
-
           <h3>Channels</h3>
           <ul className="links">
             {about.links.map((link) => (
@@ -553,9 +548,7 @@ export function MysteryApp() {
         <div className="doc-pad">
           <div className="cls-banner mono">⚠ CLASSIFIED — IN DEVELOPMENT</div>
           <h1 className="serif">Mystery</h1>
-          <p className="lede">
-            Things I'm working on but can't really explain yet. Codenames only.
-          </p>
+          <p className="lede">Upcoming projects that aren't articulable yet.</p>
           <div className="mys-grid">
             {items.map((item) => (
               <div key={item.id} className="mys-card">

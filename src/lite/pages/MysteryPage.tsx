@@ -5,7 +5,7 @@ export function MysteryPage() {
   return (
     <article className="lite-page">
       <h1>Mystery</h1>
-      <p className="lite-lede">Things in development. Codenames only.</p>
+      <p className="lite-lede">Upcoming projects that aren't articulable yet.</p>
       {items.map((item) => (
         <div key={item.id} className="lite-mystery-card">
           <div className="lite-mystery-head">

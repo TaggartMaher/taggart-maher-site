@@ -7,7 +7,6 @@ export interface AboutData {
   headline: string;
   tldr: string;
   facts: Array<[string, string]>;
-  longform: string[];
   links: Array<{ label: string; hint: string; href: string }>;
 }
 
@@ -71,11 +70,6 @@ export const PORTFOLIO: PortfolioData = {
         "methodology",
         "TDD · Agile/SCRUM · Jira · Git · Webscraping · SEO · CRM · Analytics · Audit Trails · Cursor · Gemini · ChatGPT",
       ],
-    ],
-    longform: [
-      "I'm an entrepreneurial software engineer based in Newark, DE. Most of my career has been spent embedded with business owners — figuring out where the pain points are and writing the software that actually fixes it. I've shipped production systems for finance, insurance, ecommerce, and travel.",
-      "Outside of contract work I'm usually deep in something graphics-adjacent. I'll never stop my obsession with high-performance computing. I have to push the limits of what these machines can do.",
-      "If you're interested in what I do, I'd love to hear from you!",
     ],
     links: [
       {
