@@ -79,8 +79,8 @@ export interface DebugSettings {
   //   - the static compositor caps DPR at `compositorEcoModeMaxDpr`
   //     and FPS at `compositorFpsEcoMode`
   //   - the SteamCompositor unmounts entirely (no atlas, no GPU state)
-  // On by default — the site needs to feel snappy on first-run iGPUs
-  // and only the curious turn it off.
+  // Off by default; the user flips it on from the taskbar when they
+  // need to dial back GPU + bandwidth.
   ecoMode: boolean;
 }
 
@@ -113,5 +113,5 @@ export const defaultDebugSettings: DebugSettings = {
   coffeeSteamFramePaused: false,
   coffeeSteamFrameOverride: null,
   coffeeSteamShowAtlas: false,
-  ecoMode: true,
+  ecoMode: false,
 };
