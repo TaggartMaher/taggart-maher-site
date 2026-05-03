@@ -113,11 +113,17 @@ function PWindowInner({
   }, []);
 
   function handleTitleBarPointerDown(event: React.PointerEvent<HTMLDivElement>): void {
-    if (maximized) return;
+    // Window control buttons (close/min/max) live inside the title bar.
+    // Without this guard, the title bar's setPointerCapture below would
+    // steal subsequent pointer events from the button, preventing its
+    // click from ever firing.
+    const eventTarget = event.target as HTMLElement;
+    if (eventTarget.closest(".pwin-btn")) return;
     // Only react to the primary button on mouse, ignore multi-touch.
     if (event.button !== 0) return;
     event.preventDefault();
     onFocus(windowId);
+    if (maximized) return;
     event.currentTarget.setPointerCapture(event.pointerId);
     const scale = readViewportScale(event.currentTarget);
     dragRef.current = {

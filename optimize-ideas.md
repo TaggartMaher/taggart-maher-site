@@ -9,7 +9,7 @@ DONEISH 5. finish the cgi scene 6. build out the content on the site 7. ensure f
 
 - test markdown images
 - test internal / external links
-- create browser automated testing
+- create browser automated testingc
 - find good hosting setup / auto updating things
 - create a system so we can get this running on any machine without having to re-render
 - make the blender file a part of the repo
