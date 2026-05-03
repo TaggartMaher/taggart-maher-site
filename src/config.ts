@@ -80,10 +80,7 @@ const STEAM_LOADABLE_ASSETS: LoadableAsset[] = [
 // the full asset list at 0% before the compositor begins fetching. The
 // names are surfaced verbatim in the UI; URLs match the constants
 // above.
-export const LOADABLE_ASSETS: LoadableAsset[] = [
-  ...CORE_LOADABLE_ASSETS,
-  ...STEAM_LOADABLE_ASSETS,
-];
+export const LOADABLE_ASSETS: LoadableAsset[] = [...CORE_LOADABLE_ASSETS, ...STEAM_LOADABLE_ASSETS];
 
 export function getLoadableAssets(includeSteam: boolean): LoadableAsset[] {
   return includeSteam ? LOADABLE_ASSETS : CORE_LOADABLE_ASSETS;

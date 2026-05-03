@@ -118,8 +118,31 @@ async function renderHtmlElementToCanvas(
 ): Promise<void> {
   const styleText = getInlinedStyleSheetText();
 
+  // foreignObject doesn't preserve a serialized scroll container's UA
+  // scrollTop / scrollLeft — without compensation, the rasterized
+  // image always shows content scrolled to the top. Lite mode (where
+  // the surface scrolls inside the screen rect) needs this to track
+  // user scroll. Portfolio mode never scrolls the surface container
+  // (windows are absolutely positioned), so the fast path skips the
+  // clone entirely and the per-call cost stays the same as before.
+  const scrollLeft = element.scrollLeft;
+  const scrollTop = element.scrollTop;
   const serializer = new XMLSerializer();
-  const elementMarkup = serializer.serializeToString(element);
+  let elementMarkup: string;
+  if (scrollLeft === 0 && scrollTop === 0) {
+    elementMarkup = serializer.serializeToString(element);
+  } else {
+    // Detached deep clone so we can override `overflow` (so the
+    // children visibly extend past the viewport) and apply the
+    // negative-scroll translate without touching the live element.
+    // The CSS class on the clone still resolves `position: absolute`
+    // against our outer wrapper, so the layout inside is unchanged.
+    const elementClone = element.cloneNode(true) as HTMLElement;
+    elementClone.style.overflow = "visible";
+    elementClone.style.transform = `translate(${-scrollLeft}px, ${-scrollTop}px)`;
+    elementClone.style.transformOrigin = "top left";
+    elementMarkup = serializer.serializeToString(elementClone);
+  }
 
   // Lay the foreignObject out at the surface container's natural pixel
   // size (offsetWidth/offsetHeight). The container sits inside a
