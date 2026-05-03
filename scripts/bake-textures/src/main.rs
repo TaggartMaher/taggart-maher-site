@@ -5,8 +5,9 @@
 //     public/composite/{position.exr, beauty.png}. See static.rs.
 //
 //   bake-textures coffee-steam
-//     Composites the 96-frame steam pass into a single
-//     public/composite/steam_atlas.exr (16×6 frame grid). See
+//     Composites the rendered steam frames into a single
+//     public/composite/steam_atlas.png. Frame-grid layout is read from
+//     STEAM_ATLAS_COLUMNS / STEAM_ATLAS_ROWS env vars. See
 //     coffee_steam.rs.
 //
 // build.sh / dev.sh runs both routes sequentially.
