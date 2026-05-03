@@ -40,6 +40,31 @@ html[data-mode="LIGHTWEIGHT_MODE"] body {
   padding: 12px 20px;
 }
 
+.lite-nav-links {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 16px;
+  /* flex-basis: max-content asks for the unwrapped intrinsic width.
+     If that won't fit alongside the brand, the parent (which is
+     flex-wrap: wrap) bumps this whole block to the next row as a
+     unit — preventing the "one stray link wrapped under" look.
+     Once on its own row it shrinks to fit and its own flex-wrap
+     handles narrow-screen multi-row stacking. */
+  flex: 1 1 max-content;
+  justify-content: flex-end;
+}
+
+.lite-nav-settings-icon {
+  display: block;
+  margin-right: 4px;
+  color: currentColor;
+}
+
+.lite-nav a.lite-nav-settings {
+  gap: 0;
+}
+
 .lite-nav-brand {
   font-family: "Noto Serif", Georgia, serif;
   font-weight: 700;
@@ -99,7 +124,7 @@ html[data-mode="LIGHTWEIGHT_MODE"] body {
   align-items: center;
   flex-wrap: wrap;
   gap: 8px;
-  font-size: 13px;
+  font-size: 26px;
   color: var(--accent-muted);
 }
 
@@ -314,7 +339,7 @@ html[data-mode="LIGHTWEIGHT_MODE"] body {
 
 .lite-card-meta {
   font-family: "JetBrains Mono", monospace;
-  font-size: 12px;
+  font-size: 18px;
   color: var(--accent-muted);
   margin-bottom: 4px;
 }
@@ -363,7 +388,7 @@ html[data-mode="LIGHTWEIGHT_MODE"] body {
 
 .lite-detail-meta {
   font-family: "JetBrains Mono", monospace;
-  font-size: 12px;
+  font-size: 18px;
   color: var(--accent-muted);
   margin: 0 0 4px 0;
 }
@@ -455,7 +480,7 @@ html[data-mode="LIGHTWEIGHT_MODE"] .lite-nav a.lite-nav-link {
   font-size: 18.2px;
 }
 html[data-mode="LIGHTWEIGHT_MODE"] .lite-footer-inner {
-  font-size: 16.9px;
+  font-size: 33.8px;
 }
 html[data-mode="LIGHTWEIGHT_MODE"] .lite-page h1 {
   font-size: 41.6px;
@@ -481,7 +506,7 @@ html[data-mode="LIGHTWEIGHT_MODE"] .lite-timeline-where {
   font-size: 16.9px;
 }
 html[data-mode="LIGHTWEIGHT_MODE"] .lite-card-meta {
-  font-size: 15.6px;
+  font-size: 23.4px;
 }
 html[data-mode="LIGHTWEIGHT_MODE"] .lite-card-title {
   font-size: 23.4px;
@@ -496,7 +521,7 @@ html[data-mode="LIGHTWEIGHT_MODE"] .lite-detail-back {
   font-size: 16.9px;
 }
 html[data-mode="LIGHTWEIGHT_MODE"] .lite-detail-meta {
-  font-size: 15.6px;
+  font-size: 23.4px;
 }
 html[data-mode="LIGHTWEIGHT_MODE"] .lite-mystery-codename {
   font-size: 18.2px;
