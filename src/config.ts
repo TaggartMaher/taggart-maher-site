@@ -86,14 +86,11 @@ export function getLoadableAssets(includeSteam: boolean): LoadableAsset[] {
   return includeSteam ? LOADABLE_ASSETS : CORE_LOADABLE_ASSETS;
 }
 
-// Number of pre-baked steam frames in the atlas. Matches the FRAME_END
-// in blender/render_steam.sh (96 frames at 24 fps = 4 s loop).
-export const steamFrameCount = 24;
-// Atlas layout: frames packed row-major into a (cols × rows) grid.
-// 16 × 6 = 96; chosen so neither axis runs into single-shot upload
-// limits on low-end GPUs (8192 max texture dim is the typical floor).
-export const steamAtlasColumns = 16;
-export const steamAtlasRows = 6;
+// Steam atlas frame-grid layout (cols × rows) and total frame count
+// are not duplicated here — the bake binary writes them into
+// steam_atlas_meta.json alongside whitelightScale, and the runtime
+// reads them from there. Keeps the runtime in lockstep with whichever
+// STEAM_ATLAS_COLUMNS / STEAM_ATLAS_ROWS the bake was run with.
 export const steamFps = 12;
 
 // Steam strip's normalized rectangle in full-frame coords, sourced from

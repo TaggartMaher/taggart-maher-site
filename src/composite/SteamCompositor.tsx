@@ -1,13 +1,10 @@
 import { useEffect, useRef } from "react";
 import {
   compositorEcoModeMaxDpr,
-  steamAtlasColumns,
   steamAtlasMetaPath,
   steamAtlasPath,
-  steamAtlasRows,
   steamCrop,
   steamFps,
-  steamFrameCount,
 } from "../config";
 import { loadAsset, loadAssetAsImage } from "../loading/loadAsset";
 import { downsampleFragmentShaderSource, upsampleFragmentShaderSource } from "./shader";
@@ -66,6 +63,9 @@ interface SteamCompositorProps {
 
 interface SteamAtlasMeta {
   whitelightScale?: number;
+  atlasColumns?: number;
+  atlasRows?: number;
+  frameCount?: number;
 }
 
 function compileShader(gl: WebGL2RenderingContext, type: number, source: string): WebGLShader {
@@ -302,6 +302,9 @@ export function SteamCompositor({
     let atlasTextureReady = false;
     let atlasMetaReady = false;
     let whitelightScale = 1.0;
+    let atlasColumns = 0;
+    let atlasRows = 0;
+    let frameCount = 0;
     let renderingStarted = false;
     const renderStartTimestamp = performance.now();
     loadAssetAsImage("steam_atlas.png", steamAtlasPath)
@@ -326,6 +329,26 @@ export function SteamCompositor({
         } else {
           console.warn("[steam] steam_atlas_meta.json missing whitelightScale — defaulting to 1.0");
         }
+        // atlasColumns/Rows/frameCount drive the per-frame sub-rect
+        // sampling in the shader. Without them the shader has no idea
+        // how the frames are packed, so refuse to start rendering
+        // rather than draw a scrambled atlas.
+        if (
+          typeof meta.atlasColumns !== "number" ||
+          typeof meta.atlasRows !== "number" ||
+          typeof meta.frameCount !== "number" ||
+          !(meta.atlasColumns > 0) ||
+          !(meta.atlasRows > 0) ||
+          !(meta.frameCount > 0)
+        ) {
+          console.warn(
+            "[steam] steam_atlas_meta.json missing atlasColumns/atlasRows/frameCount — steam disabled.",
+          );
+          return;
+        }
+        atlasColumns = meta.atlasColumns;
+        atlasRows = meta.atlasRows;
+        frameCount = meta.frameCount;
         atlasMetaReady = true;
         maybeStartRendering();
       })
@@ -355,7 +378,7 @@ export function SteamCompositor({
     function currentFrameIndex(nowMs: number): number {
       const override = frameOverrideRef.current;
       if (override !== null && Number.isFinite(override)) {
-        const clamped = Math.max(0, Math.min(steamFrameCount - 1, Math.floor(override)));
+        const clamped = Math.max(0, Math.min(frameCount - 1, Math.floor(override)));
         lastFrameIndex = clamped;
         return clamped;
       }
@@ -363,7 +386,7 @@ export function SteamCompositor({
         return lastFrameIndex;
       }
       const elapsedSeconds = (nowMs - renderStartTimestamp) / 1000;
-      const frame = Math.floor(elapsedSeconds * steamFps) % steamFrameCount;
+      const frame = Math.floor(elapsedSeconds * steamFps) % frameCount;
       lastFrameIndex = frame;
       return frame;
     }
@@ -470,7 +493,7 @@ export function SteamCompositor({
         steamCrop.maxX,
         steamCrop.maxY,
       );
-      gl.uniform2f(atlasGridSizeUniformLocation, steamAtlasColumns, steamAtlasRows);
+      gl.uniform2f(atlasGridSizeUniformLocation, atlasColumns, atlasRows);
       gl.uniform1i(frameIndexUniformLocation, currentFrameIndex(performance.now()));
       gl.uniform1f(intensityUniformLocation, intensityRef.current);
       gl.uniform1f(maxIntensityUniformLocation, Math.max(1e-4, maxIntensityRef.current));

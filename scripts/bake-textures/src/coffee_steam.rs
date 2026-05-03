@@ -1,12 +1,15 @@
-// Bakes the runtime steam-overlay input by compositing 96 frames'
-// worth of per-cell light-group AOVs (3×3 grid, 9 cells per frame)
-// into a single position-data atlas:
+// Bakes the runtime steam-overlay input by compositing per-cell
+// light-group AOVs (one cell-grid per frame) into a single position-data
+// atlas:
 //
-//   public/composite/steam_atlas.exr
+//   public/composite/steam_atlas.png
 //     Layout: STEAM_ATLAS_COLUMNS × STEAM_ATLAS_ROWS frames packed
-//     row-major, top-left = frame 0. Each frame is a half-float RGBA
+//     row-major, top-left = frame 0. Each frame is an 8-bit RGBA
 //     position field (R = emitter U, G = emitter V, B = whitelight,
-//     A = 1) sized to the cropped strip.
+//     A = density) sized to the cropped strip. Atlas dims are read
+//     from the STEAM_ATLAS_COLUMNS / STEAM_ATLAS_ROWS env vars and
+//     echoed into steam_atlas_meta.json so the runtime shader can
+//     sample the correct sub-rect without a duplicate constant.
 //
 //   public/composite/steam_cells_manifest.json
 //     Copy of the Blender-side manifest so the runtime can verify
@@ -22,8 +25,6 @@ use std::result::Result;
 use crate::composite;
 
 pub const STEAM_FRAME_COUNT: usize = 24;
-pub const STEAM_ATLAS_COLUMNS: usize = 16;
-pub const STEAM_ATLAS_ROWS: usize = 6;
 
 fn cell_frame_path(steam_cells_dir: &Path, cell_index: usize, frame_number: usize) -> PathBuf {
     steam_cells_dir.join(format!("steam_{cell_index}_{frame_number:04}.exr"))
@@ -40,7 +41,20 @@ fn combined_frame_path(steam_cells_dir: &Path, frame_number: usize) -> PathBuf {
 const COMBINED_ALPHA_CHANNEL: &str = "steam_combined.A";
 
 fn read_optional_float_env(name: &str) -> Option<f32> {
-    env::var(name).ok().and_then(|value| value.parse::<f32>().ok())
+    env::var(name)
+        .ok()
+        .and_then(|value| value.parse::<f32>().ok())
+}
+
+fn read_required_usize_env(name: &str) -> Result<usize, Box<dyn std::error::Error>> {
+    let raw = env::var(name).map_err(|_| format!("{name} env var is required but not set"))?;
+    let parsed: usize = raw
+        .parse()
+        .map_err(|_| format!("{name}={raw} is not a valid positive integer"))?;
+    if parsed == 0 {
+        return Err(format!("{name} must be ≥ 1, got 0").into());
+    }
+    Ok(parsed)
 }
 
 pub fn run() -> Result<(), Box<dyn std::error::Error>> {
@@ -101,10 +115,23 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
         );
         return Ok(());
     }
-    let manifest = composite::read_manifest(&manifest_path)?;
-    if manifest.cells_per_side != 3 {
+    let steam_cells_per_side = read_required_usize_env("STEAM_CELLS_PER_SIDE")?;
+    let atlas_columns = read_required_usize_env("STEAM_ATLAS_COLUMNS")?;
+    let atlas_rows = read_required_usize_env("STEAM_ATLAS_ROWS")?;
+    if atlas_columns * atlas_rows < STEAM_FRAME_COUNT {
         return Err(format!(
-            "expected steam manifest cellsPerSide=3, got {}",
+            "STEAM_ATLAS_COLUMNS ({atlas_columns}) × STEAM_ATLAS_ROWS ({atlas_rows}) = {} \
+             cannot hold STEAM_FRAME_COUNT ({STEAM_FRAME_COUNT}) frames",
+            atlas_columns * atlas_rows
+        )
+        .into());
+    }
+
+    let manifest = composite::read_manifest(&manifest_path)?;
+    if manifest.cells_per_side != steam_cells_per_side {
+        return Err(format!(
+            "steam manifest cellsPerSide={} disagrees with STEAM_CELLS_PER_SIDE={steam_cells_per_side} — \
+             re-run blender/generate_screen_cells.py and re-render",
             manifest.cells_per_side
         )
         .into());
@@ -168,8 +195,8 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
     let probe_path = cell_frame_path(&steam_cells_dir, 0, 1);
     let (frame_width, frame_height, _) =
         composite::read_named_rgb(&probe_path, ["steam_0.R", "steam_0.G", "steam_0.B"])?;
-    let atlas_width = frame_width * STEAM_ATLAS_COLUMNS;
-    let atlas_height = frame_height * STEAM_ATLAS_ROWS;
+    let atlas_width = frame_width * atlas_columns;
+    let atlas_height = frame_height * atlas_rows;
     let atlas_pixel_count = atlas_width * atlas_height;
     let mut atlas_position_u = vec![0.0_f32; atlas_pixel_count];
     let mut atlas_position_v = vec![0.0_f32; atlas_pixel_count];
@@ -182,8 +209,8 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
         frame_height,
         atlas_width,
         atlas_height,
-        STEAM_ATLAS_COLUMNS,
-        STEAM_ATLAS_ROWS,
+        atlas_columns,
+        atlas_rows,
         STEAM_FRAME_COUNT
     );
 
@@ -241,8 +268,8 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         let frame_index = frame_number - 1;
-        let frame_col = frame_index % STEAM_ATLAS_COLUMNS;
-        let frame_row = frame_index / STEAM_ATLAS_COLUMNS;
+        let frame_col = frame_index % atlas_columns;
+        let frame_row = frame_index / atlas_columns;
         let atlas_x_origin = frame_col * frame_width;
         let atlas_y_origin = frame_row * frame_height;
         for row_within in 0..frame_height {
@@ -297,8 +324,8 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
 
     let meta_json = serde_json::json!({
         "whitelightScale": whitelight_scale,
-        "atlasColumns": STEAM_ATLAS_COLUMNS,
-        "atlasRows": STEAM_ATLAS_ROWS,
+        "atlasColumns": atlas_columns,
+        "atlasRows": atlas_rows,
         "frameCount": STEAM_FRAME_COUNT,
     });
     fs::write(&atlas_meta_out, serde_json::to_string_pretty(&meta_json)?)?;
