@@ -872,6 +872,12 @@
   height: auto;
   display: block;
 }
+.portfolio .md a {
+  color: #6cb6ff;
+}
+.portfolio .md a:visited {
+  color: #c89dff;
+}
 .portfolio .readme-meta {
   font-size: 27.5px;
   color: var(--fg-3);

@@ -137,7 +137,7 @@ export function SettingsView() {
             </tr>
             <tr>
               <th className="mono">device pixel ratio</th>
-              <td>{snapshot.devicePixelRatio}</td>
+              <td>{snapshot.devicePixelRatio.toFixed(2)}</td>
             </tr>
             <tr>
               <th className="mono">pointer</th>

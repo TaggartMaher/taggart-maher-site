@@ -39,6 +39,7 @@
   border-collapse: collapse;
   background: var(--surface, transparent);
   border: 1px solid var(--rule, #ccc);
+  font-size: 50%;
 }
 
 .settings-kv th,
