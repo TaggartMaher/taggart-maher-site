@@ -1,20 +1,29 @@
-# tm-portfolio
+# Welcome
 
-Welcome. This site is laid out like a desktop because I think it's a more honest analogy for the way information actually fits together.
-
-## navigating
-
-Use the navigation links to jump between sections, or — on the desktop interface — double-click any folder icon and use the taskbar at the bottom to switch between open windows.
+My name is Taggart Maher. I'm a software engineer.
+I built this site as a portfolio after realizing I've accumulated dozens of interesting projects. It's half resume / half bragging about how wicked my code is.
 
 ## what's where
 
 - [About Me](/about) — bio, fact sheet, links
-- [Experience](/experience) — work / school timeline
-- [Projects](/projects) — shipped & in-progress work
-- [Blog](/blog) — posts and writeups
-- [Mystery](/mystery) — things in development I can't fully explain
+- [Experience](/experience) — just my resume
+- [Projects](/projects) — stuff I engineer on my own free will
+- [Blog](/blog) — my thoughts and ideas, stories.
+- [Mystery](/mystery) — upcoming projects that aren't articulable yet
 - [Contact](/contact) — reach out
 
-## site
+## About the site design
+
+If your on a desktop, you probably see this sick desktop emulator scene. If you don't, you're probably on mobile or a vertical screen. Go here if you don't know what I'm talking about: [Site Settings](/settings)
+I'll make a long-form explanation of how I built this site, but this is the basic story.
+
+1. A couple mentors of mine insisted I have a portfolio so people can see that I actually know what I'm doing and that I'm not some vibecoding amateur.
+2. I knew about other engineer's portfolio sites and their fancy CSS tricks, but I don't like frontend design that much so I didn't have any ideas.
+3. I didn't want to force it, make it some generic site that's forgettable.
+
+Here's how I made it:
+[This Website (Project)](/projects/this-website)
+
+## Settings
 
 - [Site Settings](/settings) — choose how this site is rendered (full / lightweight / fallback)
