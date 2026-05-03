@@ -114,6 +114,13 @@ export function Compositor({
   screenContrastRef.current = screenContrast;
   const screenBrightnessRef = useRef(screenBrightness);
   screenBrightnessRef.current = screenBrightness;
+  // Hidden-tab pause. The rAF loop parks itself when document.hidden
+  // is true (browsers throttle but don't reliably stop rAF on hidden
+  // tabs), and a separate effect below pokes it awake on visibility
+  // change. Exposing a wakeup function via this ref keeps the
+  // component-level visibility effect decoupled from the main effect's
+  // closure-scoped state.
+  const wakeupRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -511,13 +518,28 @@ export function Compositor({
       publishPerfMetrics();
     }
 
-    function scheduleNextFrame(): void {
+    function tick(): void {
       if (cancelled) return;
-      animationFrameHandle = requestAnimationFrame(() => {
-        renderFrame();
-        scheduleNextFrame();
-      });
+      // Park the loop when the tab is hidden — Chrome throttles to
+      // ~1 Hz and Firefox/Safari pause entirely, but on Chrome that
+      // residual tick still re-runs the upload + composite + timer
+      // queries. Wakeup is wired to visibilitychange below.
+      if (document.hidden) {
+        animationFrameHandle = null;
+        return;
+      }
+      renderFrame();
+      if (cancelled) return;
+      animationFrameHandle = requestAnimationFrame(tick);
     }
+
+    function wakeup(): void {
+      if (cancelled || animationFrameHandle !== null) return;
+      if (!renderingStarted) return;
+      if (document.hidden) return;
+      animationFrameHandle = requestAnimationFrame(tick);
+    }
+    wakeupRef.current = wakeup;
 
     let renderingStarted = false;
     function maybeStartRendering(): void {
@@ -525,7 +547,7 @@ export function Compositor({
       const beautyReady = beautyImage.complete && beautyImage.naturalWidth > 0;
       if (!beautyReady || !positionTextureReady) return;
       renderingStarted = true;
-      scheduleNextFrame();
+      animationFrameHandle = requestAnimationFrame(tick);
     }
 
     loadAssetAsImage("beauty.png", beautyImagePath)
@@ -543,6 +565,7 @@ export function Compositor({
       if (animationFrameHandle !== null) {
         cancelAnimationFrame(animationFrameHandle);
       }
+      wakeupRef.current = null;
       gl.deleteTexture(beautyTexture);
       gl.deleteTexture(screenTexture);
       gl.deleteTexture(positionTexture);
@@ -558,6 +581,16 @@ export function Compositor({
       for (const query of pendingTimerQueries) gl.deleteQuery(query);
     };
   }, [screenSourceCanvasRef, perfMetricsRef, screenSourceRevisionRef]);
+
+  // Resume the rAF loop when the tab becomes visible. The main effect
+  // runs once and never tears down for visibility flips — refs only.
+  useEffect(() => {
+    function handleVisibilityChange(): void {
+      if (!document.hidden) wakeupRef.current?.();
+    }
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
+  }, []);
 
   return <canvas ref={canvasRef} className="compositor-canvas" />;
 }

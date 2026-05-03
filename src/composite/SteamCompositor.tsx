@@ -479,6 +479,13 @@ export function SteamCompositor({
 
     function tick(): void {
       if (cancelled) return;
+      // Hidden-tab pause has to happen *before* renderFrame so the
+      // upload + clear + composite + frame-counter advance don't run
+      // while the user can't see anything.
+      if (document.hidden) {
+        animationFrameHandle = null;
+        return;
+      }
       renderFrame();
       if (cancelled) return;
       // When the steam pass is off (user disabled it or eco mode is on),
@@ -496,6 +503,7 @@ export function SteamCompositor({
       if (cancelled || animationFrameHandle !== null) return;
       if (!renderingStarted) return;
       if (!enabledRef.current || ecoModeRef.current) return;
+      if (document.hidden) return;
       animationFrameHandle = requestAnimationFrame(tick);
     }
     wakeupRef.current = wakeup;
@@ -538,6 +546,16 @@ export function SteamCompositor({
       wakeupRef.current?.();
     }
   }, [enabled, ecoMode]);
+
+  // And resume when the tab becomes visible again. wakeup checks all
+  // the gating conditions itself, so this effect just calls it.
+  useEffect(() => {
+    function handleVisibilityChange(): void {
+      if (!document.hidden) wakeupRef.current?.();
+    }
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
+  }, []);
 
   return <canvas ref={canvasRef} className="steam-compositor-canvas" />;
 }

@@ -165,6 +165,10 @@ export function ScreenOverlay({
   // this true on any change; the loop clears it before each snapshot.
   // Initial true so the first paint always runs.
   const dirtyRef = useRef(true);
+  // Set by the surface-mode rAF loop so the visibilitychange effect
+  // below can wake it back up after a hidden-tab park. Null in image /
+  // color modes, where there's no loop to resume.
+  const wakeupRef = useRef<(() => void) | null>(null);
   // Mirror settings into a ref so the rAF rasterization loop can read
   // the latest values (square pos, colors) without tearing down on
   // every settings change — the loop only needs to restart when the
@@ -365,6 +369,15 @@ export function ScreenOverlay({
 
       function tick(): void {
         if (cancelled) return;
+        // Park when the tab is hidden — the foreignObject capture's
+        // image-decode work is still scheduled even when rAF is
+        // throttled, and there's nothing visible to display. A
+        // visibilitychange listener at component scope wakes us back
+        // up by calling wakeupRef.
+        if (document.hidden) {
+          rafId = 0;
+          return;
+        }
         const now = performance.now();
         // Refresh rasterizerFps every tick so it decays toward 0 during
         // idle — recordRasterization alone wouldn't update it once
@@ -393,11 +406,21 @@ export function ScreenOverlay({
           rafId = requestAnimationFrame(tick);
         }
       }
+      function wakeup(): void {
+        if (cancelled || rafId !== 0) return;
+        if (document.hidden) return;
+        // DOM may have mutated while we were parked (route change,
+        // clock tick, etc.) — force a re-rasterization on resume.
+        dirtyRef.current = true;
+        rafId = requestAnimationFrame(tick);
+      }
+      wakeupRef.current = wakeup;
       rafId = requestAnimationFrame(tick);
 
       return () => {
         cancelled = true;
         if (rafId) cancelAnimationFrame(rafId);
+        wakeupRef.current = null;
         mutationObserver?.disconnect();
         resizeObserver?.disconnect();
         if (container) {
@@ -434,6 +457,17 @@ export function ScreenOverlay({
     settings.squareNormalizedX,
     settings.squareNormalizedY,
   ]);
+
+  // Resume the surface-mode rAF loop when the tab becomes visible.
+  // wakeupRef is null in image / color background modes (no loop to
+  // wake) — the listener is then a no-op.
+  useEffect(() => {
+    function handleVisibilityChange(): void {
+      if (!document.hidden) wakeupRef.current?.();
+    }
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
+  }, []);
 
   // Recompute the perspective transform on viewport size change. The
   // projected-corner positions are in normalized [0, 1] viewport coords;
