@@ -6,6 +6,7 @@ import { ScreenOverlay } from "../composite/ScreenOverlay";
 import { SteamCompositor } from "../composite/SteamCompositor";
 import { DebugMenu } from "../debug/DebugMenu";
 import { defaultDebugSettings, type DebugSettings } from "../debug/debugSettings";
+import { CompositorBoot } from "../loading/CompositorBoot";
 import { Portfolio } from "../portfolio/Portfolio";
 import { ModeProvider } from "../mode/ModeContext";
 import { Router } from "../router/Router";
@@ -28,47 +29,49 @@ export function FullEntry({ modeReason }: FullEntryProps) {
   return (
     <ModeProvider modeReason={modeReason}>
       <Router>
-        <Compositor
-          screenSourceCanvasRef={screenSourceCanvasRef}
-          screenSourceRevisionRef={screenSourceRevisionRef}
-          screenBlurRadiusPx={debugSettings.screenBlurRadiusPx}
-          uStretch={debugSettings.uStretch}
-          vStretch={debugSettings.vStretch}
-          uOffset={debugSettings.uOffset}
-          vOffset={debugSettings.vOffset}
-          edgeCutoff={debugSettings.edgeCutoff}
-          screenSaturation={debugSettings.screenSaturation}
-          screenContrast={debugSettings.screenContrast}
-          screenBrightness={debugSettings.screenBrightness}
-          perfMetricsRef={perfMetricsRef}
-        />
-        <ScreenOverlay
-          settings={debugSettings}
-          onSettingsChange={setDebugSettings}
-          textureCanvasRef={screenSourceCanvasRef}
-          textureRevisionRef={screenSourceRevisionRef}
-          perfMetricsRef={perfMetricsRef}
-        >
-          <Portfolio />
-        </ScreenOverlay>
-        <SteamCompositor
-          screenSourceCanvasRef={screenSourceCanvasRef}
-          screenSourceRevisionRef={screenSourceRevisionRef}
-          ecoMode={debugSettings.ecoMode}
-          enabled={debugSettings.coffeeSteamEnabled}
-          intensity={debugSettings.coffeeSteamIntensity}
-          maxIntensity={debugSettings.coffeeSteamMaxIntensity}
-          opacity={debugSettings.coffeeSteamOpacity}
-          screenBlurRadiusPx={debugSettings.coffeeSteamScreenBlurRadiusPx}
-          framePaused={debugSettings.coffeeSteamFramePaused}
-          frameOverride={debugSettings.coffeeSteamFrameOverride}
-          showAtlas={debugSettings.coffeeSteamShowAtlas}
-        />
-        <DebugMenu
-          settings={debugSettings}
-          onChange={setDebugSettings}
-          perfMetricsRef={perfMetricsRef}
-        />
+        <CompositorBoot modeReason={modeReason}>
+          <Compositor
+            screenSourceCanvasRef={screenSourceCanvasRef}
+            screenSourceRevisionRef={screenSourceRevisionRef}
+            screenBlurRadiusPx={debugSettings.screenBlurRadiusPx}
+            uStretch={debugSettings.uStretch}
+            vStretch={debugSettings.vStretch}
+            uOffset={debugSettings.uOffset}
+            vOffset={debugSettings.vOffset}
+            edgeCutoff={debugSettings.edgeCutoff}
+            screenSaturation={debugSettings.screenSaturation}
+            screenContrast={debugSettings.screenContrast}
+            screenBrightness={debugSettings.screenBrightness}
+            perfMetricsRef={perfMetricsRef}
+          />
+          <ScreenOverlay
+            settings={debugSettings}
+            onSettingsChange={setDebugSettings}
+            textureCanvasRef={screenSourceCanvasRef}
+            textureRevisionRef={screenSourceRevisionRef}
+            perfMetricsRef={perfMetricsRef}
+          >
+            <Portfolio />
+          </ScreenOverlay>
+          <SteamCompositor
+            screenSourceCanvasRef={screenSourceCanvasRef}
+            screenSourceRevisionRef={screenSourceRevisionRef}
+            ecoMode={debugSettings.ecoMode}
+            enabled={debugSettings.coffeeSteamEnabled}
+            intensity={debugSettings.coffeeSteamIntensity}
+            maxIntensity={debugSettings.coffeeSteamMaxIntensity}
+            opacity={debugSettings.coffeeSteamOpacity}
+            screenBlurRadiusPx={debugSettings.coffeeSteamScreenBlurRadiusPx}
+            framePaused={debugSettings.coffeeSteamFramePaused}
+            frameOverride={debugSettings.coffeeSteamFrameOverride}
+            showAtlas={debugSettings.coffeeSteamShowAtlas}
+          />
+          <DebugMenu
+            settings={debugSettings}
+            onChange={setDebugSettings}
+            perfMetricsRef={perfMetricsRef}
+          />
+        </CompositorBoot>
       </Router>
     </ModeProvider>
   );
