@@ -179,6 +179,15 @@ interface PortfolioProps {
 export function Portfolio({ ecoMode, onToggleEcoMode }: PortfolioProps) {
   const router = useRouter();
   const containerRef = useRef<HTMLDivElement | null>(null);
+  // Wallpaper-orb refs. The orb positions are driven from JS (not CSS
+  // animations) so the ScreenOverlay foreignObject rasterizer captures
+  // their current transform inline. CSS animations are re-parsed inside
+  // each SVG snapshot and restart from frame 0, which would freeze the
+  // orbs in the bounce-light texture.
+  const wallpaperOrbit1Ref = useRef<HTMLDivElement | null>(null);
+  const wallpaperOrbit2Ref = useRef<HTMLDivElement | null>(null);
+  const wallpaperOrb1Ref = useRef<HTMLDivElement | null>(null);
+  const wallpaperOrb2Ref = useRef<HTMLDivElement | null>(null);
   const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
   const [windows, setWindows] = useState<WindowState[]>([]);
   // zCounter is read from inside callbacks but never rendered; a ref
@@ -228,6 +237,74 @@ export function Portfolio({ ecoMode, onToggleEcoMode }: PortfolioProps) {
   useEffect(() => {
     const interval = setInterval(() => setNow(new Date()), 30 * 1000);
     return () => clearInterval(interval);
+  }, []);
+
+  // Animate the wallpaper orbs by writing inline transforms each frame.
+  // The MutationObserver inside ScreenOverlay flips its dirty flag on
+  // these style writes, so the bounce-light texture re-rasterizes and
+  // the orbs animate in the reflection too.
+  useEffect(() => {
+    const containerNode = containerRef.current;
+    if (!containerNode) return;
+    const startTimestamp = performance.now();
+    let animationFrameHandle: number | null = null;
+
+    const orbit1PeriodSeconds = 24;
+    const orbit2PeriodSeconds = 29;
+    const spiral1PeriodSeconds = 11;
+    const spiral2PeriodSeconds = 15;
+
+    function easeInOutCubic(progress: number): number {
+      return progress < 0.5
+        ? 4 * progress * progress * progress
+        : 1 - Math.pow(-2 * progress + 2, 3) / 2;
+    }
+
+    function alternatingPhase(elapsedSeconds: number, periodSeconds: number): number {
+      const phase = (elapsedSeconds % (periodSeconds * 2)) / periodSeconds;
+      return phase > 1 ? 2 - phase : phase;
+    }
+
+    function tick(): void {
+      const orbit1 = wallpaperOrbit1Ref.current;
+      const orbit2 = wallpaperOrbit2Ref.current;
+      const orb1 = wallpaperOrb1Ref.current;
+      const orb2 = wallpaperOrb2Ref.current;
+      if (containerNode && orbit1 && orbit2 && orb1 && orb2) {
+        const elapsedSeconds = (performance.now() - startTimestamp) / 1000;
+        const containerWidth = containerNode.clientWidth;
+        const containerHeight = containerNode.clientHeight;
+
+        const orbit1AngleDeg = (elapsedSeconds / orbit1PeriodSeconds) * 360;
+        const orbit2AngleDeg = -(elapsedSeconds / orbit2PeriodSeconds) * 360;
+        orbit1.style.transform = `rotate(${orbit1AngleDeg}deg)`;
+        orbit2.style.transform = `rotate(${orbit2AngleDeg}deg)`;
+
+        const spiral1Progress = easeInOutCubic(
+          alternatingPhase(elapsedSeconds, spiral1PeriodSeconds),
+        );
+        const orb1XPercent = 28 + (20 - 28) * spiral1Progress;
+        const orb1YPercent = -28 + (-18 - -28) * spiral1Progress;
+        orb1.style.transform = `translate(${(orb1XPercent / 100) * containerWidth}px, ${
+          (orb1YPercent / 100) * containerHeight
+        }px)`;
+
+        const spiral2Progress = easeInOutCubic(
+          alternatingPhase(elapsedSeconds, spiral2PeriodSeconds),
+        );
+        const orb2XPercent = -26 + (-18 - -26) * spiral2Progress;
+        const orb2YPercent = 26 + (18 - 26) * spiral2Progress;
+        orb2.style.transform = `translate(${(orb2XPercent / 100) * containerWidth}px, ${
+          (orb2YPercent / 100) * containerHeight
+        }px)`;
+      }
+      animationFrameHandle = requestAnimationFrame(tick);
+    }
+
+    animationFrameHandle = requestAnimationFrame(tick);
+    return () => {
+      if (animationFrameHandle !== null) cancelAnimationFrame(animationFrameHandle);
+    };
   }, []);
 
   const openApp = useCallback((appId: AppId, override?: OpenAppOverride): void => {
@@ -426,11 +503,11 @@ export function Portfolio({ ecoMode, onToggleEcoMode }: PortfolioProps) {
       <SelectionProvider state={selectionState}>
         <InternalLinkProvider onNavigate={handleInternalNavigate}>
           <div className="portfolio" ref={containerRef}>
-            <div className="wp-orbit wp-orbit-1">
-              <div className="wp-orb wp-orb-1"></div>
+            <div className="wp-orbit wp-orbit-1" ref={wallpaperOrbit1Ref}>
+              <div className="wp-orb wp-orb-1" ref={wallpaperOrb1Ref}></div>
             </div>
-            <div className="wp-orbit wp-orbit-2">
-              <div className="wp-orb wp-orb-2"></div>
+            <div className="wp-orbit wp-orbit-2" ref={wallpaperOrbit2Ref}>
+              <div className="wp-orb wp-orb-2" ref={wallpaperOrb2Ref}></div>
             </div>
 
             <div className="desk-icons">
