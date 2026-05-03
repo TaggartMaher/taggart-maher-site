@@ -5,7 +5,7 @@ export function BlogPage() {
   return (
     <article className="lite-page">
       <h1>Blog</h1>
-      <p className="lite-lede">Posts. Some technical, some less so.</p>
+      <p className="lite-lede">My ideas, thoughts, and stories.</p>
       <ul className="lite-card-list">
         {BLOG_POSTS.map((post) => (
           <li key={post.id}>

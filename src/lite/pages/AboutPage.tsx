@@ -19,11 +19,6 @@ export function AboutPage() {
         </tbody>
       </table>
 
-      <h2>Long form</h2>
-      {about.longform.map((paragraph, paragraphIndex) => (
-        <p key={paragraphIndex}>{paragraph}</p>
-      ))}
-
       <h2>Channels</h2>
       <ul className="lite-link-list">
         {about.links.map((link) => (
