@@ -1,7 +1,10 @@
 .screen-overlay {
   position: fixed;
   overflow: hidden;
-  background: #fafafa;
+  /* Black so unfilled / hidden surface areas don't multiply into a
+     bright bounce contribution. The user-content rasterization fills
+     in pixels where the page is visible. */
+  background: #000;
   z-index: 10;
   /* The overlay is a passive surface — let pointer events fall through to
      the canvas (and back up to its own children that opt in, like the

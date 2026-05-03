@@ -144,20 +144,27 @@ async function renderHtmlElementToCanvas(
     elementMarkup = serializer.serializeToString(elementClone);
   }
 
-  // Lay the foreignObject out at the surface container's natural pixel
-  // size (offsetWidth/offsetHeight). The container sits inside a
-  // matrix3d-projected parent, so getBoundingClientRect would return
-  // post-projection viewport pixels — but window positions in
-  // Portfolio are computed in the un-projected natural space, so the
-  // SVG must lay out there too. drawImage below stretches the result
-  // to the texture canvas size.
-  const sourceWidth = Math.max(1, element.offsetWidth);
-  const sourceHeight = Math.max(1, element.offsetHeight);
+  // Visible viewport size — what the live element clips to (offsetWidth
+  // × offsetHeight). The surface container sits inside a matrix3d-
+  // projected parent, so getBoundingClientRect would return post-
+  // projection viewport pixels; offsetWidth/Height are the natural-
+  // space dimensions windows / square overlays are positioned against.
+  const visibleWidth = Math.max(1, element.offsetWidth);
+  const visibleHeight = Math.max(1, element.offsetHeight);
+  // Inner content size including overflowed (scrolled) area. The SVG
+  // viewport is sized to this so CSS viewport-percentage units (vh /
+  // vw) inside the foreignObject resolve to the same values they had
+  // in the live document — without it, content using `min-height:
+  // 100vh` (the lite-mode shell) renders shorter in the capture than
+  // it does on the page, and scrolling near the bottom exposes the
+  // black wrapper background as a phantom area beyond the content.
+  const innerWidth = Math.max(visibleWidth, element.scrollWidth);
+  const innerHeight = Math.max(visibleHeight, element.scrollHeight);
 
   const svg =
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${sourceWidth}" height="${sourceHeight}">` +
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${innerWidth}" height="${innerHeight}">` +
     `<foreignObject width="100%" height="100%">` +
-    `<div xmlns="http://www.w3.org/1999/xhtml" style="width:${sourceWidth}px;height:${sourceHeight}px;background:#fafafa;overflow:hidden;">` +
+    `<div xmlns="http://www.w3.org/1999/xhtml" style="width:${innerWidth}px;height:${innerHeight}px;background:#000;overflow:hidden;">` +
     `<style>${styleText}</style>` +
     elementMarkup +
     `</div>` +
@@ -175,7 +182,22 @@ async function renderHtmlElementToCanvas(
   const context = canvas.getContext("2d");
   if (!context) return;
   context.clearRect(0, 0, canvas.width, canvas.height);
-  context.drawImage(image, 0, 0, canvas.width, canvas.height);
+  // The clone's transform aligned the visible scroll viewport to the
+  // image's top-left, so taking visibleWidth × visibleHeight from there
+  // and stretching to the texture canvas reproduces what the user sees
+  // on the page — no scaling artifacts even when the SVG is rendered
+  // at the larger inner size.
+  context.drawImage(
+    image,
+    0,
+    0,
+    visibleWidth,
+    visibleHeight,
+    0,
+    0,
+    canvas.width,
+    canvas.height,
+  );
 }
 
 export function ScreenOverlay({
@@ -217,7 +239,7 @@ export function ScreenOverlay({
     canvas.height = settings.ecoMode ? TEXTURE_HEIGHT_ECO_MODE : TEXTURE_HEIGHT;
     const context = canvas.getContext("2d");
     if (context) {
-      context.fillStyle = "#fafafa";
+      context.fillStyle = "#000";
       context.fillRect(0, 0, canvas.width, canvas.height);
     }
     internalCanvasRef.current = canvas;
@@ -225,7 +247,7 @@ export function ScreenOverlay({
     textureRevisionRef.current = (textureRevisionRef.current ?? 0) + 1;
     // Force the rasterizer to capture into the freshly-allocated
     // canvas on its next tick — otherwise the bounce light shows the
-    // initial #fafafa fill until the next external dirty signal.
+    // initial black fill until the next external dirty signal.
     dirtyRef.current = true;
     return () => {
       if (textureCanvasRef.current === canvas) {
@@ -313,7 +335,7 @@ export function ScreenOverlay({
       } catch (error) {
         if (!context) return;
         console.warn("[overlay] failed to rasterize surface DOM:", error);
-        context.fillStyle = "#fafafa";
+        context.fillStyle = "#000";
         context.fillRect(0, 0, canvas.width, canvas.height);
       } finally {
         rasterizing = false;
