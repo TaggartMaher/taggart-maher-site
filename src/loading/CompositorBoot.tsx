@@ -53,13 +53,19 @@ function readForceCompositorFlag(): boolean {
 
 interface CompositorBootProps {
   modeReason: ModeReason;
+  // Subset of LOADABLE_ASSETS the calling entry actually intends to
+  // fetch this session. When unset (the default), the full list is
+  // pre-registered. Entries that gate the steam compositor off (eco
+  // mode, coffee-steam toggle off) pass `getLoadableAssets(false)` so
+  // the loading screen doesn't sit waiting for steam_atlas to download.
+  requiredAssets?: { name: string; url: string }[];
   children: ReactNode;
 }
 
 // Wraps the compositor entries (FullEntry, LightweightEntry) in the
 // loading-screen + incompatibility-gate state machine. See
 // LOADING_SCREEN_PLAN.md §4 for the four phases.
-export function CompositorBoot({ modeReason, children }: CompositorBootProps) {
+export function CompositorBoot({ modeReason, requiredAssets, children }: CompositorBootProps) {
   const initialPhase = useMemo<BootPhase>(() => {
     if (modeReason.source === "auto") return "loading";
     if (readForceCompositorFlag()) return "loading";
@@ -80,12 +86,17 @@ export function CompositorBoot({ modeReason, children }: CompositorBootProps) {
   // Pre-register the known asset list so the loading screen can show
   // the full menu at 0% before the compositor starts its fetches. Only
   // re-runs on retry — phase transitions must NOT reset the tracker,
-  // or finished assets would flip back to "queued" mid-fade.
+  // or finished assets would flip back to "queued" mid-fade. The
+  // assets snapshot is captured at boot time and intentionally NOT
+  // re-applied if `requiredAssets` changes mid-load (the compositors
+  // mount at boot and don't add new fetches until a future retry).
   useEffect(() => {
+    const assets = requiredAssets ?? LOADABLE_ASSETS;
     loadingTracker.reset();
-    for (const asset of LOADABLE_ASSETS) {
+    for (const asset of assets) {
       loadingTracker.registerAsset(asset.name, asset.url);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [retryKey]);
 
   const trackerState = useLoadingTracker();
