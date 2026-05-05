@@ -50,64 +50,64 @@ const APPS: Record<AppId, AppMeta> = {
   home: {
     title: "Home — File Manager",
     icon: <Icon name="folder" />,
-    defaultWidth: 880,
-    defaultHeight: 560,
+    defaultWidth: 1400,
+    defaultHeight: 826,
     Component: HomeApp,
   },
   about: {
     title: "About Me — Document",
     icon: <Icon name="person" />,
-    defaultWidth: 960,
-    defaultHeight: 800,
+    defaultWidth: 1400,
+    defaultHeight: 1087,
     Component: AboutApp,
   },
   experience: {
     title: "Experience — Document",
     icon: <Icon name="list" />,
-    defaultWidth: 1010,
-    defaultHeight: 770,
+    defaultWidth: 1400,
+    defaultHeight: 989,
     Component: ExperienceApp,
   },
   projects: {
     title: "Projects — Browser",
     icon: <Icon name="wrench" />,
-    defaultWidth: 1300,
+    defaultWidth: 1400,
     defaultHeight: 825,
     Component: ProjectsApp,
   },
   blog: {
     title: "Blog — Reader",
     icon: <Icon name="pencil" />,
-    defaultWidth: 960,
-    defaultHeight: 800,
+    defaultWidth: 1400,
+    defaultHeight: 1087,
     Component: BlogApp,
   },
   mystery: {
     title: "Mystery — CLASSIFIED",
     icon: <Icon name="lock" />,
-    defaultWidth: 960,
-    defaultHeight: 745,
+    defaultWidth: 1400,
+    defaultHeight: 1006,
     Component: MysteryApp,
   },
   readme: {
     title: "README.md — Editor",
     icon: <Icon name="document" />,
-    defaultWidth: 930,
-    defaultHeight: 745,
+    defaultWidth: 1400,
+    defaultHeight: 1039,
     Component: ReadmeApp,
   },
   contact: {
     title: "Contact",
     icon: <Icon name="envelope" />,
-    defaultWidth: 745,
-    defaultHeight: 640,
+    defaultWidth: 1400,
+    defaultHeight: 1110,
     Component: ContactApp,
   },
   settings: {
     title: "Site Settings",
     icon: <Icon name="gear" />,
-    defaultWidth: 880,
-    defaultHeight: 760,
+    defaultWidth: 1400,
+    defaultHeight: 1126,
     Component: SettingsApp,
   },
 };
@@ -328,10 +328,8 @@ export function Portfolio({ ecoMode, onToggleEcoMode }: PortfolioProps) {
       const usableHeight = containerHeight - TASKBAR_HEIGHT;
       const clampedWidth = Math.max(360, Math.min(scaledWidth, containerWidth - 20));
       const clampedHeight = Math.max(280, Math.min(scaledHeight, usableHeight - 20));
-      const positionX =
-        override?.positionX ?? Math.max(20, Math.round((containerWidth - clampedWidth) / 2));
-      const positionY =
-        override?.positionY ?? Math.max(20, Math.round((usableHeight - clampedHeight) / 2));
+      const positionX = override?.positionX ?? 180;
+      const positionY = override?.positionY ?? 20;
       return [
         ...previous,
         {
@@ -365,19 +363,7 @@ export function Portfolio({ ecoMode, onToggleEcoMode }: PortfolioProps) {
     if (target.appId === "blog") {
       setBlogSelectedId(target.blogSubId ?? null);
     }
-    // The readme is the home target — open it with the larger
-    // bootstrap layout that the original code used so first-load
-    // doesn't reuse the small default size for this special window.
-    if (target.appId === "readme" && !hasRunUrlBootstrapRef.current) {
-      const usableHeight = containerSize.height - TASKBAR_HEIGHT;
-      const targetHeight = Math.round(usableHeight * 0.9);
-      const targetWidth = Math.round(containerSize.width / 2);
-      const positionX = Math.round((containerSize.width - targetWidth) / 2);
-      const positionY = Math.round((usableHeight - targetHeight) / 2);
-      openApp("readme", { positionX, positionY, width: targetWidth, height: targetHeight });
-    } else {
-      openApp(target.appId);
-    }
+    openApp(target.appId);
     hasRunUrlBootstrapRef.current = true;
   }, [router.path, containerSize.width, containerSize.height, openApp]);
 
