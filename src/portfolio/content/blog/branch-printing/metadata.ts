@@ -3,6 +3,7 @@ import content from "./index.md?raw";
 
 const metadata: BlogMetadata = {
   id: "branch-printing",
+  draft: true,
   title: "3D Printing Branch Structures",
   year: "2021",
   date: "2021-09-20",
