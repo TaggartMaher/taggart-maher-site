@@ -33,4 +33,5 @@ export const PROJECTS: ProjectMetadata[] = Object.entries(metadataModules)
     const heroImage = directoryName ? heroImageByDir[directoryName] : undefined;
     return { ...mod.default, heroImage };
   })
+  .filter((project) => !project.draft)
   .sort((a, b) => b.date.localeCompare(a.date));

@@ -15,6 +15,9 @@ Each directory contains:
 - `hero.jpg` — optional hero image; auto-attached if present, no
   config needed
 
+Set `draft: true` on the metadata to keep an entry in the repo while
+hiding it from the site (the aggregator filters drafts out).
+
 The aggregators in each section's `index.ts` use `import.meta.glob`
 to discover everything; the **only** thing controlling display order
 is the `date` field (sorted descending). You do not need to edit

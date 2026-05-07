@@ -3,6 +3,7 @@ import content from "./index.md?raw";
 
 const metadata: ProjectMetadata = {
   id: "token-monster",
+  draft: true,
   name: "Token Monster",
   year: "2025",
   date: "2025-09",

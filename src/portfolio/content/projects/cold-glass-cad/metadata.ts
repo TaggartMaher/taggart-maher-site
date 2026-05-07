@@ -3,6 +3,7 @@ import content from "./index.md?raw";
 
 const metadata: ProjectMetadata = {
   id: "cold-glass-cad",
+  draft: true,
   name: "Cold Glass CAD Drawings",
   year: "2022",
   date: "2022-03",

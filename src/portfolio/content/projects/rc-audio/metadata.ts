@@ -3,6 +3,7 @@ import content from "./index.md?raw";
 
 const metadata: ProjectMetadata = {
   id: "rc-audio",
+  draft: true,
   name: "RC Car Audio Simulation",
   year: "2024",
   date: "2024-09",

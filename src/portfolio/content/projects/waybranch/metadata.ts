@@ -3,6 +3,7 @@ import content from "./index.md?raw";
 
 const metadata: ProjectMetadata = {
   id: "waybranch",
+  draft: true,
   name: "Waybranch",
   year: "2026",
   date: "2026-01",

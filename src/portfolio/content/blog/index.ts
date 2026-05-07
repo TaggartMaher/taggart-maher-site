@@ -33,4 +33,5 @@ export const BLOG_POSTS: BlogMetadata[] = Object.entries(metadataModules)
     const heroImage = directoryName ? heroImageByDir[directoryName] : undefined;
     return { ...mod.default, heroImage };
   })
+  .filter((post) => !post.draft)
   .sort((a, b) => b.date.localeCompare(a.date));

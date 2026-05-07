@@ -3,6 +3,7 @@ import content from "./index.md?raw";
 
 const metadata: ProjectMetadata = {
   id: "respiratory-model",
+  draft: true,
   name: "Respiratory Model",
   year: "2025",
   date: "2025-03",

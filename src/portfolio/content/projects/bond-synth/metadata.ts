@@ -3,6 +3,7 @@ import content from "./index.md?raw";
 
 const metadata: ProjectMetadata = {
   id: "bond-synth",
+  draft: true,
   name: "Bond Synth",
   year: "2023",
   date: "2023-03",

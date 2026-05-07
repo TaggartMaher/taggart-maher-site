@@ -3,6 +3,7 @@ import content from "./index.md?raw";
 
 const metadata: BlogMetadata = {
   id: "the-forge",
+  draft: true,
   title: "The Forge",
   year: "2021",
   date: "2021-04-05",

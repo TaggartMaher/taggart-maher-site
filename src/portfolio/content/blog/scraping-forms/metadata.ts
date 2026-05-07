@@ -3,6 +3,7 @@ import content from "./index.md?raw";
 
 const metadata: BlogMetadata = {
   id: "scraping-forms",
+  draft: true,
   title: "Advanced Web Scraping for Forms and Logins",
   year: "2022",
   date: "2022-08-15",

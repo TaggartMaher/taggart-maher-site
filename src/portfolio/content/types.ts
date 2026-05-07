@@ -28,6 +28,11 @@ export interface ProjectMetadata {
   // hero.jpg into the project directory and the aggregator wires it
   // up. Undefined when no hero image is present.
   heroImage?: string;
+  // When true, the aggregator skips this entry entirely so it does
+  // not appear in the Projects window or via /projects/<id>. Use this
+  // for placeholder / not-yet-finished entries that should stay in
+  // the repo but be hidden from the site until they're ready.
+  draft?: boolean;
 }
 
 export interface BlogMetadata {
@@ -48,4 +53,8 @@ export interface BlogMetadata {
   // metadata file. Authors should NOT set this directly — drop a
   // hero.jpg into the post directory and the aggregator wires it up.
   heroImage?: string;
+  // When true, the aggregator skips this post so it does not appear
+  // in the Blog window or via /blog/<id>. For drafts and
+  // placeholders that should stay in the repo but stay off the site.
+  draft?: boolean;
 }

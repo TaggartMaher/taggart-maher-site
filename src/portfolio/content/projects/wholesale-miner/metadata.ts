@@ -3,6 +3,7 @@ import content from "./index.md?raw";
 
 const metadata: ProjectMetadata = {
   id: "wholesale-miner",
+  draft: true,
   name: "Wholesale Ecommerce Data Miner",
   year: "2022",
   date: "2022-09",

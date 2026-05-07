@@ -3,6 +3,7 @@ import content from "./index.md?raw";
 
 const metadata: ProjectMetadata = {
   id: "oneclickdocs",
+  draft: true,
   name: "One Click Docs BMS",
   year: "2024",
   date: "2024-03",
