@@ -98,6 +98,40 @@ interface ScreenOverlayProps {
   children: ReactNode;
 }
 
+// Walk the live tree and the clone in lockstep; for every element
+// whose live counterpart has a non-zero scrollTop / scrollLeft, set
+// `overflow: hidden` on the clone and translate each of its child
+// elements by the negative scroll offset. The serialized SVG then
+// renders the same content the user actually sees through each
+// scroll container's viewport, instead of always-from-the-top. The
+// scrolled clone gets `overflow: hidden` (instead of `visible`) so
+// content past the viewport is clipped exactly like the live element,
+// preventing items below the scroll viewport from leaking onto the
+// rasterized image.
+function applyScrollOffsetsToClone(liveRoot: HTMLElement, cloneRoot: HTMLElement): void {
+  const liveWalker = document.createTreeWalker(liveRoot, NodeFilter.SHOW_ELEMENT);
+  const cloneWalker = document.createTreeWalker(cloneRoot, NodeFilter.SHOW_ELEMENT);
+  let liveElement = liveRoot as Element | null;
+  let cloneElement = cloneRoot as Element | null;
+  while (liveElement && cloneElement) {
+    const liveHtmlElement = liveElement as HTMLElement;
+    const cloneHtmlElement = cloneElement as HTMLElement;
+    const scrollLeft = liveHtmlElement.scrollLeft;
+    const scrollTop = liveHtmlElement.scrollTop;
+    if (scrollLeft !== 0 || scrollTop !== 0) {
+      cloneHtmlElement.style.overflow = "hidden";
+      const translate = `translate(${-scrollLeft}px, ${-scrollTop}px)`;
+      for (const child of Array.from(cloneHtmlElement.children) as HTMLElement[]) {
+        const existingTransform = child.style.transform;
+        child.style.transform = existingTransform ? `${translate} ${existingTransform}` : translate;
+        child.style.transformOrigin = "top left";
+      }
+    }
+    liveElement = liveWalker.nextNode() as Element | null;
+    cloneElement = cloneWalker.nextNode() as Element | null;
+  }
+}
+
 // Serialize an HTMLElement into a canvas via SVG <foreignObject>. The
 // element's own markup plus the page's full inlined stylesheet text are
 // dropped into a self-contained SVG, then decoded as an image and
@@ -118,31 +152,19 @@ async function renderHtmlElementToCanvas(
 ): Promise<void> {
   const styleText = getInlinedStyleSheetText();
 
-  // foreignObject doesn't preserve a serialized scroll container's UA
+  // foreignObject doesn't preserve serialized scroll containers' UA
   // scrollTop / scrollLeft — without compensation, the rasterized
-  // image always shows content scrolled to the top. Lite mode (where
-  // the surface scrolls inside the screen rect) needs this to track
-  // user scroll. Portfolio mode never scrolls the surface container
-  // (windows are absolutely positioned), so the fast path skips the
-  // clone entirely and the per-call cost stays the same as before.
-  const scrollLeft = element.scrollLeft;
-  const scrollTop = element.scrollTop;
+  // image always shows content scrolled to the top. Both the root
+  // element (lite-mode shell, which scrolls inside the screen rect)
+  // and any descendant scroll container (FULL_MODE Portfolio windows
+  // each have their own scrollable body) need offsets applied.
+  // Always work on a clone so we can mutate styles freely; walk both
+  // trees in parallel and translate each scrolled container's clone
+  // children by its current scroll offset.
+  const elementClone = element.cloneNode(true) as HTMLElement;
+  applyScrollOffsetsToClone(element, elementClone);
   const serializer = new XMLSerializer();
-  let elementMarkup: string;
-  if (scrollLeft === 0 && scrollTop === 0) {
-    elementMarkup = serializer.serializeToString(element);
-  } else {
-    // Detached deep clone so we can override `overflow` (so the
-    // children visibly extend past the viewport) and apply the
-    // negative-scroll translate without touching the live element.
-    // The CSS class on the clone still resolves `position: absolute`
-    // against our outer wrapper, so the layout inside is unchanged.
-    const elementClone = element.cloneNode(true) as HTMLElement;
-    elementClone.style.overflow = "visible";
-    elementClone.style.transform = `translate(${-scrollLeft}px, ${-scrollTop}px)`;
-    elementClone.style.transformOrigin = "top left";
-    elementMarkup = serializer.serializeToString(elementClone);
-  }
+  const elementMarkup = serializer.serializeToString(elementClone);
 
   // Visible viewport size — what the live element clips to (offsetWidth
   // × offsetHeight). The surface container sits inside a matrix3d-
