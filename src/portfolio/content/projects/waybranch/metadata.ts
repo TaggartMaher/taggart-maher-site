@@ -5,9 +5,9 @@ const metadata: ProjectMetadata = {
   id: "waybranch",
   name: "Waybranch",
   year: "2026",
+  date: "2026-01",
   status: "Upcoming",
   tag: "VFX · Vegetation",
-  icon: "🌿",
   oneliner: "Dynamic VFX vegetation generator. Plants that grow, sway, react.",
   stack: ["[ engine ]", "[ language ]", "[ shader stack ]"],
   links: [

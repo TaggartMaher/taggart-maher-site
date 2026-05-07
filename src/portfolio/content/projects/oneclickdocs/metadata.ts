@@ -5,8 +5,8 @@ const metadata: ProjectMetadata = {
   id: "oneclickdocs",
   name: "One Click Docs BMS",
   year: "2024",
+  date: "2024-03",
   tag: "Orchestration · SaaS",
-  icon: "📑",
   oneliner:
     "App orchestration software for business management systems — deploy a fully-featured demo per lead in minutes.",
   stack: ["TypeScript", "React", "Node", "Express", "AWS", "Docker", "Puppeteer"],

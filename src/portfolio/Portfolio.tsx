@@ -329,7 +329,7 @@ export function Portfolio({ ecoMode, onToggleEcoMode }: PortfolioProps) {
       const clampedWidth = Math.max(360, Math.min(scaledWidth, containerWidth - 20));
       const clampedHeight = Math.max(280, Math.min(scaledHeight, usableHeight - 20));
       const positionX = override?.positionX ?? 180;
-      const positionY = override?.positionY ?? 20;
+      const positionY = override?.positionY ?? 0;
       return [
         ...previous,
         {

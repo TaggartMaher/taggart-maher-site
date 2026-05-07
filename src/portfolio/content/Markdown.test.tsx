@@ -46,9 +46,9 @@ describe("Project content", () => {
     for (const project of PROJECTS) {
       expect(project.id).toBeTruthy();
       expect(project.name).toBeTruthy();
-      expect(project.icon).toBeTruthy();
       expect(project.tag).toBeTruthy();
       expect(project.year).toBeTruthy();
+      expect(project.date).toMatch(/^\d{4}-\d{2}(-\d{2})?$/);
       expect(project.oneliner).toBeTruthy();
       expect(project.content.trim().length).toBeGreaterThan(0);
       expect(Array.isArray(project.stack)).toBe(true);

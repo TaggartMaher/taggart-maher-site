@@ -16,9 +16,7 @@ export function ProjectDetailPage({ projectId }: { projectId: string }) {
         {project.tag} · {project.year}
         {project.status ? " · " + project.status : ""}
       </p>
-      <h1>
-        {project.icon} {project.name}
-      </h1>
+      <h1>{project.name}</h1>
       <p className="lite-lede">{project.oneliner}</p>
       <Markdown>{project.content}</Markdown>
       <h3>Stack</h3>

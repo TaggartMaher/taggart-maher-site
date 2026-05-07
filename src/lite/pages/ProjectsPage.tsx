@@ -14,9 +14,7 @@ export function ProjectsPage() {
                 {project.tag} · {project.year}
                 {project.status ? " · " + project.status : ""}
               </div>
-              <h2 className="lite-card-title">
-                {project.icon} {project.name}
-              </h2>
+              <h2 className="lite-card-title">{project.name}</h2>
               <p className="lite-card-excerpt">{project.oneliner}</p>
             </Link>
           </li>

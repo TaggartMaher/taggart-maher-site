@@ -166,6 +166,32 @@ function Sidebar({ active }: SidebarProps) {
   );
 }
 
+interface FocusBarProps {
+  focusMode: boolean;
+  onChange: (focusMode: boolean) => void;
+}
+
+// Sticky bar that pins to the top of the scrolling content panel.
+// Shows a "Read" button when expanded; clicking collapses the
+// list/sidebar so only the article is visible. In focus mode the bar
+// fills full-width as a grey "back" affordance to exit focus.
+function FocusBar({ focusMode, onChange }: FocusBarProps) {
+  if (focusMode) {
+    return (
+      <button type="button" className="focus-bar back mono" onClick={() => onChange(false)}>
+        ‹ Back
+      </button>
+    );
+  }
+  return (
+    <div className="focus-bar">
+      <button type="button" className="focus-read mono" onClick={() => onChange(true)}>
+        Read
+      </button>
+    </div>
+  );
+}
+
 interface StatusbarProps {
   count: number;
   hint: string;
@@ -341,10 +367,11 @@ export function ProjectsApp() {
   const projects = PROJECTS;
   const { selectedId, setSelectedId } = useProjectsSelection();
   const [view, setView] = useState<"grid" | "list">("list");
+  const [focusMode, setFocusMode] = useState(false);
   const current = projects.find((project) => project.id === selectedId);
 
   return (
-    <div className="dol">
+    <div className={"dol" + (focusMode ? " focus" : "")}>
       <Toolbar
         path="/home/taggart/Projects"
         right={
@@ -370,9 +397,17 @@ export function ProjectsApp() {
                   onClick={() => setSelectedId(project.id)}
                 >
                   <div className="proj-thumb">
-                    <div className="thumb-ico">{project.icon}</div>
                     <div className="thumb-stripes"></div>
-                    <div className="thumb-tag mono">[ thumb ]</div>
+                    {project.heroImage ? (
+                      <img
+                        className="thumb-image"
+                        src={project.heroImage}
+                        alt={project.name}
+                        loading="lazy"
+                      />
+                    ) : (
+                      <div className="thumb-tag mono">[ thumb ]</div>
+                    )}
                     {project.status && <div className="status-pill mono">{project.status}</div>}
                   </div>
                   <div className="proj-name">{project.name}</div>
@@ -386,7 +421,6 @@ export function ProjectsApp() {
             <table className="proj-table">
               <thead>
                 <tr>
-                  <th></th>
                   <th>Name</th>
                   <th>Tag</th>
                   <th>Year</th>
@@ -399,7 +433,6 @@ export function ProjectsApp() {
                     className={selectedId === project.id ? "sel" : ""}
                     onClick={() => setSelectedId(project.id)}
                   >
-                    <td className="row-ico">{project.icon}</td>
                     <td className="row-name">
                       {project.name}
                       {project.status && (
@@ -417,10 +450,14 @@ export function ProjectsApp() {
         <aside className="proj-detail">
           {current && (
             <>
+              <FocusBar focusMode={focusMode} onChange={setFocusMode} />
               <div className="detail-thumb">
-                <div className="thumb-ico big">{current.icon}</div>
                 <div className="thumb-stripes"></div>
-                <div className="thumb-tag mono">[ project image ]</div>
+                {current.heroImage ? (
+                  <img className="thumb-image big" src={current.heroImage} alt={current.name} />
+                ) : (
+                  <div className="thumb-tag mono">[ project image ]</div>
+                )}
               </div>
               <div className="detail-pad">
                 <div className="detail-meta mono">
@@ -462,15 +499,22 @@ export function ProjectsApp() {
 export function BlogApp() {
   const posts = BLOG_POSTS;
   const { selectedId, setSelectedId } = useBlogSelection();
+  const [focusMode, setFocusMode] = useState(false);
   const selected = selectedId ? posts.find((post) => post.id === selectedId) : null;
+  // Leaving an article exits focus mode so the next post starts fresh
+  // with the sidebar visible.
+  const handleBackToIndex = (): void => {
+    setFocusMode(false);
+    setSelectedId(null);
+  };
 
   return (
-    <div className="dol">
+    <div className={"dol" + (selected && focusMode ? " focus" : "")}>
       <Toolbar
         path={"/home/taggart/Blog" + (selected ? "/" + selected.id + ".md" : "")}
         right={
           <div className="vw-toggle mono">
-            {selected && <button onClick={() => setSelectedId(null)}>‹ index</button>}
+            {selected && <button onClick={handleBackToIndex}>‹ index</button>}
             {selected && <CopyLinkButton />}
           </div>
         }
@@ -480,6 +524,7 @@ export function BlogApp() {
         <div className="doc-pad">
           {selected ? (
             <article>
+              <FocusBar focusMode={focusMode} onChange={setFocusMode} />
               <div className="post-h">
                 <span className="post-tag mono">
                   {selected.icon ? selected.icon + " " : ""}
