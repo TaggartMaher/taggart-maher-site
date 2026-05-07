@@ -1,0 +1,91 @@
+{
+  "CallerReference": "taggartmaher-bootstrap-2026-05-07",
+  "Comment": "taggartmaher.com static site",
+  "Enabled": true,
+  "Aliases": {
+    "Quantity": 6,
+    "Items": [
+      "taggartmaher.com",
+      "www.taggartmaher.com",
+      "blog.taggartmaher.com",
+      "taggart-maher.com",
+      "www.taggart-maher.com",
+      "blog.taggart-maher.com"
+    ]
+  },
+  "DefaultRootObject": "index.html",
+  "Origins": {
+    "Quantity": 1,
+    "Items": [
+      {
+        "Id": "s3-taggartmaher-com",
+        "DomainName": "taggartmaher-com.s3.us-east-1.amazonaws.com",
+        "OriginAccessControlId": "E2LVL2J9IWIFQP",
+        "S3OriginConfig": { "OriginAccessIdentity": "" },
+        "ConnectionAttempts": 3,
+        "ConnectionTimeout": 10,
+        "OriginShield": { "Enabled": false },
+        "CustomHeaders": { "Quantity": 0 }
+      }
+    ]
+  },
+  "DefaultCacheBehavior": {
+    "TargetOriginId": "s3-taggartmaher-com",
+    "ViewerProtocolPolicy": "redirect-to-https",
+    "AllowedMethods": {
+      "Quantity": 2,
+      "Items": ["GET", "HEAD"],
+      "CachedMethods": {
+        "Quantity": 2,
+        "Items": ["GET", "HEAD"]
+      }
+    },
+    "Compress": true,
+    "CachePolicyId": "658327ea-f89d-4fab-a63d-7e88639e58f6",
+    "FunctionAssociations": {
+      "Quantity": 1,
+      "Items": [
+        {
+          "FunctionARN": "arn:aws:cloudfront::334675085596:function/taggartmaher-redirect",
+          "EventType": "viewer-request"
+        }
+      ]
+    },
+    "LambdaFunctionAssociations": { "Quantity": 0 },
+    "FieldLevelEncryptionId": "",
+    "SmoothStreaming": false
+  },
+  "CustomErrorResponses": {
+    "Quantity": 2,
+    "Items": [
+      {
+        "ErrorCode": 403,
+        "ResponsePagePath": "/index.html",
+        "ResponseCode": "200",
+        "ErrorCachingMinTTL": 60
+      },
+      {
+        "ErrorCode": 404,
+        "ResponsePagePath": "/index.html",
+        "ResponseCode": "200",
+        "ErrorCachingMinTTL": 60
+      }
+    ]
+  },
+  "PriceClass": "PriceClass_100",
+  "ViewerCertificate": {
+    "ACMCertificateArn": "arn:aws:acm:us-east-1:334675085596:certificate/e18bbced-31ac-4db6-b0eb-c95d5be5d206",
+    "SSLSupportMethod": "sni-only",
+    "MinimumProtocolVersion": "TLSv1.2_2021",
+    "Certificate": "arn:aws:acm:us-east-1:334675085596:certificate/e18bbced-31ac-4db6-b0eb-c95d5be5d206",
+    "CertificateSource": "acm"
+  },
+  "HttpVersion": "http2and3",
+  "IsIPV6Enabled": true,
+  "Restrictions": {
+    "GeoRestriction": { "RestrictionType": "none", "Quantity": 0 }
+  },
+  "WebACLId": "",
+  "Staging": false,
+  "ContinuousDeploymentPolicyId": ""
+}

@@ -11,6 +11,7 @@
     "dev": "vite",
     "build:assets": "cargo run --quiet --release --manifest-path scripts/bake-textures/Cargo.toml -- static && cargo run --quiet --release --manifest-path scripts/bake-textures/Cargo.toml -- coffee-steam",
     "build": "tsc -b && vite build",
+    "deploy": "tsx scripts/deploy.ts",
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",

@@ -13,7 +13,19 @@ Working notes for getting this site production-ready. Updated as decisions are m
 - **Wire compression:** Brotli with gzip fallback at the CDN edge.
 - **CDN caching:** required. Cheap-to-serve under traffic spikes is an explicit goal — long-cache hashed assets, short-cache `index.html`.
 - **Asset compression:** lossless only. No quality loss in any media.
-- **CI:** not doing GitHub Actions yet. Deploy stays manual via `scripts/deploy.ts`.
+- **CI:** not doing GitHub Actions yet. Deploy stays manual via `scripts/deploy.ts` (`pnpm deploy`).
+- **Secondary domain:** `taggart-maher.com` (and its `www.` / `blog.` variants) is registered and 301-redirects to the canonical `taggartmaher.com` (or `blog.taggartmaher.com`) via the CloudFront Function `taggartmaher-redirect`.
+
+## AWS resources (provisioned)
+
+- **Account:** 334675085596, region us-east-1.
+- **ACM cert:** `arn:aws:acm:us-east-1:334675085596:certificate/e18bbced-31ac-4db6-b0eb-c95d5be5d206` — 6 SANs covering both domains' apex/www/blog.
+- **S3 bucket:** `taggartmaher-com` — private, public access blocked, ACLs disabled (bucket-owner-enforced), versioning enabled.
+- **CloudFront distribution:** `E1MGHH06ERTWGT` (`dy6trm3dr1eye.cloudfront.net`) — managed `CachingOptimized` policy, 403/404 → `/index.html` 200, PriceClass_100, TLSv1.2_2021, HTTP/2+3.
+- **CloudFront OAC:** `E2LVL2J9IWIFQP`.
+- **CloudFront Function:** `taggartmaher-redirect` (LIVE) at viewer-request.
+- **Route 53 zones:** `taggartmaher.com` `Z04652922U652Z8KKLT0S`, `taggart-maher.com` `Z04659511I30G1YG9LGGX`. Both point all hostnames at the distribution via A/AAAA aliases.
+- **Source-of-truth files** for the function code, distribution config, and bucket policy: `infra/`. Update AWS via `aws cloudfront update-function`, `update-distribution`, and `s3api put-bucket-policy` when these change.
 
 ## Deferred to post-launch
 
@@ -30,7 +42,6 @@ _(none currently.)_
 
 ### Blockers
 
-- `scripts/deploy.ts` is a TODO stub — implement S3 sync + CloudFront invalidation.
 - No top-level `ErrorBoundary` in `src/main.tsx`; a shader/EXR failure currently produces a blank page.
 - `src/composite/*` (~2000 LoC of GPU code) has zero tests. Add at least `decodeExr.ts` parser tests and shader-compile error-path tests.
 
@@ -44,12 +55,14 @@ _(none currently.)_
 
 ### CloudFront / caching plan
 
-- `index.html`: `Cache-Control: public, max-age=60`. Deploys go live within 60 s; CloudFront invalidation can cut that to immediate.
-- Hashed JS/CSS assets (`*.[hash].js`): `Cache-Control: public, max-age=31536000, immutable`.
-- Media in `public/composite/`: `Cache-Control: public, max-age=31536000, immutable` after the asset pipeline content-hashes filenames (see High punch-list item).
-- Enable Brotli + gzip at the distribution.
-- Use OAC (Origin Access Control) so S3 isn't public; CloudFront is the only reader.
-- SPA deep-link fallback: configure CloudFront to serve `/index.html` (status 200) for 404s on non-asset paths so client-side routes (`/blog/...`, deep links into the portfolio) resolve. Either a custom error response or a CloudFront Function on viewer-request.
+Cache-Control headers below are set at upload time by `scripts/deploy.ts`. CloudFront's managed `CachingOptimized` policy honors them.
+
+- `index.html`: `Cache-Control: public, max-age=60`. ✅ Wired in deploy script.
+- Hashed JS/CSS assets (`dist/assets/*`): `Cache-Control: public, max-age=31536000, immutable`. ✅ Wired.
+- Media in `public/composite/` and other unhashed static (favicons, og-image, etc.): currently `public, max-age=86400` until the asset pipeline content-hashes them; then bump to immutable 1y (see High punch-list item).
+- Brotli + gzip enabled on the distribution. ✅
+- OAC (`E2LVL2J9IWIFQP`) so S3 stays private; CloudFront is the only reader. ✅
+- SPA deep-link fallback via CustomErrorResponses (403/404 → `/index.html` 200, `ErrorCachingMinTTL=60`). ✅
 
 ### Medium
 
