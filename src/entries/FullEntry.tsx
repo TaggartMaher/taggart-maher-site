@@ -12,6 +12,7 @@ import { Portfolio } from "../portfolio/Portfolio";
 import { ModeProvider } from "../mode/ModeContext";
 import { Router } from "../router/Router";
 import type { ModeReason } from "../mode/chooseMode";
+import { ExitToNormalButton } from "../shared/ExitToNormalButton";
 
 interface FullEntryProps {
   modeReason: ModeReason;
@@ -39,6 +40,7 @@ export function FullEntry({ modeReason }: FullEntryProps) {
   return (
     <ModeProvider modeReason={modeReason}>
       <Router>
+        <ExitToNormalButton />
         <CompositorBoot modeReason={modeReason} requiredAssets={requiredAssets}>
           <Compositor
             screenSourceCanvasRef={screenSourceCanvasRef}
