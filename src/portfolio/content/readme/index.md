@@ -1,7 +1,10 @@
 # Welcome
 
 My name is Taggart Maher. I'm a software engineer.
-I built this site as a portfolio after realizing I've accumulated dozens of interesting projects. It's half resume / half bragging about how wicked my code is.
+
+# CHECK OUT MY WICKED PROJECTS
+
+-> [WICKED PROJECTS](/projects)
 
 ## what's where
 

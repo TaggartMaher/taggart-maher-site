@@ -1,3 +1,19 @@
+# "Foreword"
+
+The origins of this project are quite odd, I would say.
+This project took me several weeks equivalent of fulltime work, probably 150-200 hours ish.
+(so far...)
+
+I stumbled into this, I didn't decide to do it outright.
+If you go to the [Mystery](/mystery) page you'll see something about a voxel physics engine.
+I was looking at Truncated Octahedra, a type of space filling 3D shape that makes a cool lattice. I was researching the math behind the lattices, and figuring out what other people had done. I was writing code at the time to optimize massive lattice structures.
+
+Anyway, on hackernews there was a comment about someone wanting to use Truncated Octahedra:
+![YCombinator Comment](/projects/respiratory-model/ycombinator-comment.png)
+
+So I reached out, he turned out to be a really cool anesthesiologist in Switzerland.
+After that, I just got hooked on the idea of making a medical simulation system, and used it as an opportunity to learn and see what I could do. Funny how things happen.
+
 # Respiratory Model & Voxel Simulation Platform
 
 A primitive version of a more universal simulation platform for human anatomy. The project was inspired by voxels and their ability to represent volumetric data in a far more computationally efficient manner than traditional meshes. The ultimate goal is to produce more accurate and performant medical models built on voxel representations — and to get there, a "control" piece of software needed to exist first. This program serves as that control: an interface for a respiratory model that can act as a solid foundation for fairly comparing future innovations against.
@@ -125,6 +141,11 @@ The diameter assignment in this implementation does **not** use Horsfield order 
 
 ---
 
-## Why this matters
+## Conclusion
 
-The exercise is not just to make the same model faster. It is to demonstrate that a voxel-based representation of human anatomy can underwrite a full anatomical simulation while remaining **fast enough to be interactive**. Once the foundation is sound and reproduces a respected reference, the same machinery can be re-aimed at problems where a one-hour iteration time would have been a non-starter — interactive parameter exploration, large-scale stochastic studies, or any clinical use where waiting an hour for a single airway tree is the bottleneck that prevents the work from happening at all.
+This will be worked on in the coming months. I have another unrelated use case for this algorithm, involving VFX and trees. It's called "waybranch"
+I'll release that, it's my next "big thing" I've already been working on it for weeks.
+
+The medical aspect of the project is supposed to evolve into stochastic modeling, using millions of simulations to analyze the airflow of various structures. But I haven't really progressed that, so I'll leave it at that.
+
+You can check out the repo if you're interested. I'd be really excited to hear from anyone who has anything at all to say about what I've built!

@@ -12,7 +12,7 @@ const metadata: ProjectMetadata = {
   stack: ["Rust", "wgpu / WGSL", "egui", "winit", "WebAssembly"],
   links: [
     { label: "Demo Video", href: "https://www.youtube.com/watch?v=li_e7lVD1g0" },
-    { label: "Repo", href: "#" },
+    { label: "Repo", href: "https://github.com/TaggartMaher/respiratory-model" },
   ],
   content,
 };

@@ -6,6 +6,8 @@ export function ProjectsPage() {
     <article className="lite-page">
       <h1>Projects</h1>
       <p className="lite-lede">Stuff I engineer on my own free will.</p>
+      <p className="lite-lede">More coming soon.</p>
+      <p className="lite-lede">I just didn't have time to do full writeups of everything yet.</p>
       <ul className="lite-card-list">
         {PROJECTS.map((project) => (
           <li key={project.id}>
