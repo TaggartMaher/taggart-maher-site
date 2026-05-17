@@ -54,7 +54,7 @@ export const PORTFOLIO: PortfolioData = {
       ["name", "Taggart Maher"],
       ["role", "Full Stack Developer"],
       ["location", "Newark, DE"],
-      ["email", "taggart.maher@gmail.com"],
+      ["email", "taggart.talk@gmail.com"],
       ["status", "[ open to work ]"],
       [
         "languages",
@@ -82,7 +82,7 @@ export const PORTFOLIO: PortfolioData = {
         hint: "[ linkedin.com/in/taggart-maher ]",
         href: "https://www.linkedin.com/in/taggart-maher/",
       },
-      { label: "Email", hint: "taggart.maher@gmail.com", href: "mailto:taggart.maher@gmail.com" },
+      { label: "Email", hint: "taggart.talk@gmail.com", href: "mailto:taggart.talk@gmail.com" },
       {
         label: "Youtube (VFX, Projects, etc.)",
         hint: "[ @tagxialo ]",
