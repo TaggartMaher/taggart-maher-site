@@ -19,6 +19,14 @@ const MODE_LABEL: Record<Mode, string> = {
   FALLBACK_MODE: "Fallback",
 };
 
+const MODE_SEGMENT_LABEL: Record<Mode, string> = {
+  FULL_MODE: "FULL",
+  LIGHTWEIGHT_MODE: "LIGHT",
+  FALLBACK_MODE: "BASIC",
+};
+
+const MODE_SEGMENT_ORDER: Mode[] = ["FULL_MODE", "LIGHTWEIGHT_MODE", "FALLBACK_MODE"];
+
 const MODE_DESCRIPTION: Record<Mode, string> = {
   FULL_MODE:
     "The compositor renders a 3D Blender Cycles scene at runtime. Inside the simulated screen, a desktop-emulator UI lets you open multiple windows and read content as if it were on a real computer. Best with a mouse and a landscape display.",
@@ -124,6 +132,26 @@ export function SettingsView() {
           choice depends on your device and what you want to see.
         </p>
       </header>
+
+      <div className="settings-mode-segments mono" role="group" aria-label="Rendering mode">
+        {MODE_SEGMENT_ORDER.map((mode) => {
+          const isActive = mode === modeReason.mode;
+          return (
+            <button
+              key={mode}
+              type="button"
+              className={
+                "settings-mode-segment" + (isActive ? " settings-mode-segment-active" : "")
+              }
+              aria-pressed={isActive}
+              disabled={isActive}
+              onClick={() => switchToMode(mode)}
+            >
+              {MODE_SEGMENT_LABEL[mode]}
+            </button>
+          );
+        })}
+      </div>
 
       <section className="settings-section">
         <h2 className="serif">Your device</h2>

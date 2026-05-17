@@ -9,7 +9,7 @@ const metadata: ProjectMetadata = {
   tag: "VFX · Blender · WGSL",
   oneliner: "How I made this website, with realtime lighting reflections.",
   stack: ["Typescript", "Blender", "Rust", "Python"],
-  links: [{ label: "Demo Video", href: "#" }],
+  links: [{ label: "Demo Video", href: "https://github.com/TaggartMaher/taggart-maher-site" }],
   content,
 };
 

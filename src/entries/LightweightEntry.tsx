@@ -12,6 +12,7 @@ import { CompositorBoot } from "../loading/CompositorBoot";
 import { ModeProvider } from "../mode/ModeContext";
 import { Router } from "../router/Router";
 import type { ModeReason } from "../mode/chooseMode";
+import { ExitToNormalButton } from "../shared/ExitToNormalButton";
 
 interface LightweightEntryProps {
   modeReason: ModeReason;
@@ -34,6 +35,7 @@ export function LightweightEntry({ modeReason }: LightweightEntryProps) {
   return (
     <ModeProvider modeReason={modeReason}>
       <Router>
+        <ExitToNormalButton />
         <CompositorBoot modeReason={modeReason} requiredAssets={requiredAssets}>
           <Compositor
             screenSourceCanvasRef={screenSourceCanvasRef}

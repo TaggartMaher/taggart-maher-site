@@ -139,3 +139,44 @@
   border-color: var(--accent-muted, #888);
   color: var(--accent-muted, #888);
 }
+
+.settings-mode-segments {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  border: 1px solid var(--rule, #ccc);
+  background: var(--surface, transparent);
+  overflow: hidden;
+}
+
+.settings-mode-segment {
+  appearance: none;
+  background: transparent;
+  color: var(--accent-muted, #888);
+  border: none;
+  border-right: 1px solid var(--rule, #ccc);
+  padding: 14px 12px;
+  font: inherit;
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  cursor: pointer;
+  min-height: 48px;
+  transition:
+    background 90ms ease,
+    color 90ms ease;
+}
+
+.settings-mode-segment:last-child {
+  border-right: none;
+}
+
+.settings-mode-segment:hover:not(:disabled) {
+  background: var(--rule, #ccc);
+  color: var(--text);
+}
+
+.settings-mode-segment-active {
+  background: var(--accent, currentColor);
+  color: var(--bg, #fff);
+  cursor: default;
+}
