@@ -9,7 +9,7 @@ export function ExitToNormalButton() {
 
   return (
     <button type="button" className="exit-to-normal-button" onClick={handleClick}>
-      Exit to normal website
+      Press for compatibility mode
     </button>
   );
 }

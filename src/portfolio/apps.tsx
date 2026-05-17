@@ -169,24 +169,26 @@ function Sidebar({ active }: SidebarProps) {
 interface FocusBarProps {
   focusMode: boolean;
   onChange: (focusMode: boolean) => void;
+  readLabel: string;
+  backLabel: string;
 }
 
 // Sticky bar that pins to the top of the scrolling content panel.
-// Shows a "Read" button when expanded; clicking collapses the
+// Shows the read-label button when expanded; clicking collapses the
 // list/sidebar so only the article is visible. In focus mode the bar
-// fills full-width as a grey "back" affordance to exit focus.
-function FocusBar({ focusMode, onChange }: FocusBarProps) {
+// fills full-width as a grey back affordance to exit focus.
+function FocusBar({ focusMode, onChange, readLabel, backLabel }: FocusBarProps) {
   if (focusMode) {
     return (
       <button type="button" className="focus-bar back mono" onClick={() => onChange(false)}>
-        ‹ Back
+        ‹ {backLabel}
       </button>
     );
   }
   return (
     <div className="focus-bar">
       <button type="button" className="focus-read mono" onClick={() => onChange(true)}>
-        Read
+        {readLabel}
       </button>
     </div>
   );
@@ -450,7 +452,12 @@ export function ProjectsApp() {
         <aside className="proj-detail">
           {current && (
             <>
-              <FocusBar focusMode={focusMode} onChange={setFocusMode} />
+              <FocusBar
+                focusMode={focusMode}
+                onChange={setFocusMode}
+                readLabel="Read Article"
+                backLabel="Back to Article List"
+              />
               <div className="detail-thumb">
                 <div className="thumb-stripes"></div>
                 {current.heroImage ? (
@@ -499,24 +506,18 @@ export function ProjectsApp() {
 export function BlogApp() {
   const posts = BLOG_POSTS;
   const { selectedId, setSelectedId } = useBlogSelection();
-  const [focusMode, setFocusMode] = useState(false);
   const selected = selectedId ? posts.find((post) => post.id === selectedId) : null;
-  // Leaving an article exits focus mode so the next post starts fresh
-  // with the sidebar visible.
-  const handleBackToIndex = (): void => {
-    setFocusMode(false);
-    setSelectedId(null);
-  };
 
   return (
-    <div className={"dol" + (selected && focusMode ? " focus" : "")}>
+    <div className={"dol" + (selected ? " focus" : "")}>
       <Toolbar
         path={"/home/taggart/Blog" + (selected ? "/" + selected.id + ".md" : "")}
         right={
-          <div className="vw-toggle mono">
-            {selected && <button onClick={handleBackToIndex}>‹ index</button>}
-            {selected && <CopyLinkButton />}
-          </div>
+          selected ? (
+            <div className="vw-toggle mono">
+              <CopyLinkButton />
+            </div>
+          ) : undefined
         }
       />
       <div className="dol-body">
@@ -524,7 +525,13 @@ export function BlogApp() {
         <div className="doc-pad">
           {selected ? (
             <article>
-              <FocusBar focusMode={focusMode} onChange={setFocusMode} />
+              <button
+                type="button"
+                className="focus-bar back mono"
+                onClick={() => setSelectedId(null)}
+              >
+                ‹ Back to Article List
+              </button>
               <div className="post-h">
                 <span className="post-tag mono">
                   {selected.icon ? selected.icon + " " : ""}
