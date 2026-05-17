@@ -3,14 +3,13 @@ import content from "./index.md?raw";
 
 const metadata: BlogMetadata = {
   id: "the-forge",
-  draft: true,
   title: "The Forge",
   year: "2021",
   date: "2021-04-05",
   tag: "Hardware",
   icon: "🔨",
-  excerpt: "[ My desktop build — parts, reasoning, photos, what I'd do differently. ]",
-  readtime: "[ X min ]",
+  excerpt: "My desktop build — the parts I picked, why, and what it actually feels like to use.",
+  readtime: "5 min",
   content,
 };
 

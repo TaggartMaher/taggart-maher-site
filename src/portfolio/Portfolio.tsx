@@ -322,12 +322,24 @@ export function Portfolio({ ecoMode, onToggleEcoMode }: PortfolioProps) {
       const meta = APPS[appId];
       const containerWidth = containerSizeRef.current.width;
       const containerHeight = containerSizeRef.current.height;
-      const scale = Math.min(containerWidth / REFERENCE_CONTAINER_WIDTH, 1);
+      // If the container hasn't been measured yet (or a transient
+      // ResizeObserver write returned 0), fall back to a scale of 1 and
+      // skip the upper clamp — otherwise the math collapses every new
+      // window to the 360×280 floor (scale 0 → scaledWidth 0 → upper
+      // clamp containerWidth-20 = -20 → Math.max(360, -20) = 360).
+      const hasMeasuredContainer = containerWidth > 0 && containerHeight > 0;
+      const scale = hasMeasuredContainer
+        ? Math.min(containerWidth / REFERENCE_CONTAINER_WIDTH, 1)
+        : 1;
       const scaledWidth = override?.width ?? Math.round(meta.defaultWidth * scale);
       const scaledHeight = override?.height ?? Math.round(meta.defaultHeight * scale);
       const usableHeight = containerHeight - TASKBAR_HEIGHT;
-      const clampedWidth = Math.max(360, Math.min(scaledWidth, containerWidth - 20));
-      const clampedHeight = Math.max(280, Math.min(scaledHeight, usableHeight - 20));
+      const clampedWidth = hasMeasuredContainer
+        ? Math.max(360, Math.min(scaledWidth, containerWidth - 20))
+        : Math.max(360, scaledWidth);
+      const clampedHeight = hasMeasuredContainer
+        ? Math.max(280, Math.min(scaledHeight, usableHeight - 20))
+        : Math.max(280, scaledHeight);
       const positionX = override?.positionX ?? 180;
       const positionY = override?.positionY ?? 0;
       return [

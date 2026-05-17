@@ -872,6 +872,14 @@
   height: auto;
   display: block;
 }
+/* Wrap code blocks so they never force the preview panel to scroll
+   horizontally. Long lines break instead of overflowing. */
+.portfolio .md pre,
+.portfolio .md code {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
 .portfolio .md a {
   color: #6cb6ff;
 }
