@@ -98,7 +98,7 @@ export function Layout({ children }: { children: ReactNode }) {
         <main className="lite-main">{children}</main>
         <footer className="lite-footer">
           <div className="lite-footer-inner">
-            <span>taggart.talk@gmail.com</span>
+            <a href="mailto:taggart.talk@gmail.com">taggart.talk@gmail.com</a>
             <Link to="/settings">Site Settings</Link>
           </div>
         </footer>

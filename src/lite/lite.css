@@ -454,6 +454,18 @@ html[data-mode="LIGHTWEIGHT_MODE"] body {
     margin-bottom: 4px;
   }
 
+  /* Once the brand is on its own row, the links land on row 2 alone.
+     The default flex-basis: max-content tells iOS Safari to lay them
+     out at their unwrapped intrinsic width, which overflows the
+     viewport and produces horizontal scroll. Force a basis of 100%
+     and unblock shrinking so the row's own flex-wrap can stack the
+     links into multiple lines as needed. */
+  .lite-nav-links {
+    flex: 0 1 100%;
+    min-width: 0;
+    justify-content: flex-start;
+  }
+
   .lite-page h1 {
     font-size: 26px;
   }
