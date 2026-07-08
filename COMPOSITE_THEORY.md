@@ -113,7 +113,7 @@ consumes it to weight `(col_K, row_K) · cell_K.b` correctly.
    `cells_manifest.json`, computes per-pixel emitter UV and
    whitelight, applies the Gaussian blur, and writes
    `public/composite/{beauty.png, position.exr}`.
-3. **Runtime** — `src/composite/Compositor.tsx` uploads `beauty.png`
+3. **Runtime** — `src/composite/Compositor.svelte` uploads `beauty.png`
    via an `<img>` element and fetches `position.exr` as an
    `ArrayBuffer`, decoding it with `decodeExr.ts` into a
    `Uint16Array` of half-float bits and uploading as `RGBA16F`. It
@@ -126,7 +126,7 @@ consumes it to weight `(col_K, row_K) · cell_K.b` correctly.
 | Concern              | File                                         |
 | -------------------- | -------------------------------------------- |
 | Per-fragment math    | `src/composite/shader.ts`                    |
-| WebGL host           | `src/composite/Compositor.tsx`               |
+| WebGL host           | `src/composite/Compositor.svelte`            |
 | EXR decoder          | `src/composite/decodeExr.ts`                 |
 | Asset bake           | `scripts/bake-textures/src/main.rs`          |
 | Blender scene script | `blender/generate_screen_cells.py`           |

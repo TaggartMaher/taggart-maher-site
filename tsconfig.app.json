@@ -10,12 +10,11 @@
     "isolatedModules": true,
     "moduleDetection": "force",
     "noEmit": true,
-    "jsx": "react-jsx",
     "strict": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true,
-    "types": ["vitest/globals"]
+    "types": ["vitest/globals", "svelte"]
   },
-  "include": ["src"]
+  "include": ["src/**/*.ts", "src/**/*.svelte"]
 }

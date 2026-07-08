@@ -1,6 +1,7 @@
 // Per-frame performance snapshot the Compositor publishes for any UI that
 // wants to display it (currently the debug menu). Kept separate from
-// Compositor.tsx so the React fast-refresh boundary stays clean.
+// Compositor.svelte so plain TS modules can import it without pulling
+// in a component.
 //
 // CPU/GPU times are smoothed (EMA) inside the compositor so the readout
 // is legible. `gpuFrameMs` is null when EXT_disjoint_timer_query_webgl2

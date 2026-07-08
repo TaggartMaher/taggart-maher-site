@@ -1,5 +1,3 @@
-import { useSyncExternalStore } from "react";
-
 // Per-asset progress record. Bytes are reported as the fetch streams
 // chunks through `loadAsset`. `total` is 0 when the response did not
 // include a Content-Length header — callers should display "loading…"
@@ -158,7 +156,3 @@ export const loadingTracker = {
     return cachedSnapshot;
   },
 };
-
-export function useLoadingTracker(): TrackerState {
-  return useSyncExternalStore(loadingTracker.subscribe, loadingTracker.getSnapshot);
-}
