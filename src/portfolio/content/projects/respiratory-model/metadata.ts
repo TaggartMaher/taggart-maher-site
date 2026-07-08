@@ -1,5 +1,5 @@
 import type { ProjectMetadata } from "../../types";
-import content from "./index.md?raw";
+import content from "./index.md?html";
 
 const metadata: ProjectMetadata = {
   id: "respiratory-model",

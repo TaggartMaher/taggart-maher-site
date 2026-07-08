@@ -308,11 +308,8 @@
     const nextZ = zCounter;
     const existing = windows.find((windowState) => windowState.appId === appId);
     if (existing) {
-      windows = windows.map((windowState) =>
-        windowState.appId === appId
-          ? { ...windowState, zIndex: nextZ, minimized: false }
-          : windowState,
-      );
+      existing.zIndex = nextZ;
+      existing.minimized = false;
       return;
     }
     const meta = APPS[appId];
@@ -391,40 +388,51 @@
     return () => window.removeEventListener("keydown", handleKey);
   });
 
+  // Single-window updates mutate the window's $state object in place —
+  // Svelte's deep proxy makes that fine-grained, so a drag frame only
+  // touches the dragged window's style bindings instead of rebuilding
+  // the windows array. Adding and removing windows still reassign the
+  // array (openApp, closeWindow, the Esc handler).
+  function findWindow(id: string): WindowState | undefined {
+    return windows.find((windowState) => windowState.id === id);
+  }
+
   function closeWindow(id: string): void {
     windows = windows.filter((windowState) => windowState.id !== id);
   }
 
   function focusWindow(id: string): void {
+    const windowState = findWindow(id);
+    if (!windowState) return;
     zCounter += 1;
-    const nextZ = zCounter;
-    windows = windows.map((windowState) =>
-      windowState.id === id ? { ...windowState, zIndex: nextZ, minimized: false } : windowState,
-    );
+    windowState.zIndex = zCounter;
+    windowState.minimized = false;
   }
 
   function minimizeWindow(id: string): void {
-    windows = windows.map((windowState) =>
-      windowState.id === id ? { ...windowState, minimized: true } : windowState,
-    );
+    const windowState = findWindow(id);
+    if (!windowState) return;
+    windowState.minimized = true;
   }
 
   function toggleMaximize(id: string): void {
-    windows = windows.map((windowState) =>
-      windowState.id === id ? { ...windowState, maximized: !windowState.maximized } : windowState,
-    );
+    const windowState = findWindow(id);
+    if (!windowState) return;
+    windowState.maximized = !windowState.maximized;
   }
 
   function moveWindow(id: string, positionX: number, positionY: number): void {
-    windows = windows.map((windowState) =>
-      windowState.id === id ? { ...windowState, positionX, positionY } : windowState,
-    );
+    const windowState = findWindow(id);
+    if (!windowState) return;
+    windowState.positionX = positionX;
+    windowState.positionY = positionY;
   }
 
   function resizeWindow(id: string, width: number, height: number): void {
-    windows = windows.map((windowState) =>
-      windowState.id === id ? { ...windowState, width, height } : windowState,
-    );
+    const windowState = findWindow(id);
+    if (!windowState) return;
+    windowState.width = width;
+    windowState.height = height;
   }
 
   const focusedWindow = $derived(

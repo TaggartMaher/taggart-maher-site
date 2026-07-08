@@ -1,7 +1,8 @@
 // Shared metadata types for markdown-backed content. Each project /
 // blog entry lives in its own directory: a `metadata.ts` file exports
 // the typed object below, and the prose lives in a sibling `index.md`
-// loaded via Vite's `?raw` query.
+// compiled to HTML at build time via the `?html` query (see the
+// markdown-to-html plugin in vite.config.ts).
 
 export interface ContentLink {
   label: string;
@@ -21,7 +22,7 @@ export interface ProjectMetadata {
   oneliner: string;
   stack: string[];
   links: ContentLink[];
-  // Markdown body, loaded as a raw string by the entry's metadata.ts.
+  // Body prose: HTML rendered at build time from the entry's index.md.
   content: string;
   // Auto-attached by the aggregator from `hero.jpg` next to this
   // metadata file. Authors should NOT set this directly — drop a

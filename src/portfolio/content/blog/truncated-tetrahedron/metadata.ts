@@ -1,5 +1,5 @@
 import type { BlogMetadata } from "../../types";
-import content from "./index.md?raw";
+import content from "./index.md?html";
 
 const metadata: BlogMetadata = {
   id: "truncated-tetrahedron",

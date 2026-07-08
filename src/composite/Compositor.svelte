@@ -285,6 +285,12 @@
     // Last screen-source revision we uploaded via texImage2D. -1 forces
     // an upload on the first frame.
     let lastUploadedScreenSourceRevision = -1;
+    // Dimensions of the screen texture's current GPU allocation. While
+    // the source canvas keeps its size (the normal case — it only
+    // changes on an eco-mode toggle), uploads go through texSubImage2D
+    // into the existing allocation instead of re-allocating.
+    let screenTextureWidth = 0;
+    let screenTextureHeight = 0;
     // Timestamp of the last fully-rendered frame, in performance.now()
     // milliseconds. Used by the eco-mode FPS throttle to skip rAFs that
     // arrive sooner than the eco frame interval.
@@ -412,7 +418,16 @@
       gl.bindTexture(gl.TEXTURE_2D, screenTexture);
       const screenSourceRevision = screenSourceRevisionRef.current ?? 0;
       if (screenSourceRevision !== lastUploadedScreenSourceRevision) {
-        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, screenSource);
+        if (
+          screenSource.width === screenTextureWidth &&
+          screenSource.height === screenTextureHeight
+        ) {
+          gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, gl.RGBA, gl.UNSIGNED_BYTE, screenSource);
+        } else {
+          gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, screenSource);
+          screenTextureWidth = screenSource.width;
+          screenTextureHeight = screenSource.height;
+        }
         lastUploadedScreenSourceRevision = screenSourceRevision;
       }
 

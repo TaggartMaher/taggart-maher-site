@@ -12,7 +12,9 @@ interface ImportMetaEnv {
   readonly STEAM_CROP_MAX_Y: string;
 }
 
-declare module "*.md?raw" {
-  const content: string;
-  export default content;
+// Markdown compiled to an HTML string at build time by the
+// markdown-to-html plugin in vite.config.ts.
+declare module "*.md?html" {
+  const html: string;
+  export default html;
 }

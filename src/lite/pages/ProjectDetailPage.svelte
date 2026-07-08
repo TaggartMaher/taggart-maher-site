@@ -20,7 +20,7 @@
     </p>
     <h1>{project.name}</h1>
     <p class="lite-lede">{project.oneliner}</p>
-    <Markdown source={project.content} />
+    <Markdown html={project.content} />
     <h3>Stack</h3>
     <div class="lite-chip-row">
       {#each project.stack as tech (tech)}

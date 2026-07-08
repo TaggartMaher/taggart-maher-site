@@ -1,13 +1,14 @@
+// BUILD-TIME ONLY. This module is imported by the markdown-to-html
+// plugin in vite.config.ts (and by tests) — never from app code.
+// Importing it from anything the browser loads would put the whole
+// unified/remark pipeline back into the bundle.
+
 import type { Element, Root } from "hast";
 import rehypeStringify from "rehype-stringify";
 import remarkGfm from "remark-gfm";
 import remarkParse from "remark-parse";
 import remarkRehype from "remark-rehype";
 import { unified } from "unified";
-
-export function isInternalHref(href: string | null): href is string {
-  return typeof href === "string" && href.startsWith("/");
-}
 
 function isHttpHref(href: unknown): href is string {
   return typeof href === "string" && /^https?:\/\//i.test(href);

@@ -54,3 +54,19 @@ Install `playwright-core` in a scratch dir (no browser download needed).
   `.steam-compositor-canvas`; toggling back remounts it.
 
 Capture `pageerror` console events — the app should log none.
+
+## Hit-testing pitfalls (FULL/LIGHTWEIGHT modes)
+
+- The loading overlay intercepts ALL pointer events until it detaches —
+  it lingers 1s at 100% and then fades. Interact only after the
+  attach→detach wait above, or clicks silently land on the overlay.
+- The screen UI sits under a matrix3d perspective warp, so a
+  boundingBox() center is NOT guaranteed to be on the element (small
+  targets like `.pwin-resize` and taskbar buttons miss). Probe with
+  `document.elementFromPoint` over the client rect to find a point that
+  actually hits, then drive `page.mouse` at that point.
+- Don't dispatch synthetic PointerEvents directly on elements — the
+  drag handlers call `setPointerCapture`, which throws for pointer ids
+  with no active pointer.
+- Minimizing the LAST visible window intentionally routes to `/`, which
+  opens the README window (URL ↔ desktop state sync). Not a bug.

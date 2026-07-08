@@ -65,12 +65,12 @@ describe("Project content", () => {
   });
 
   // Skipped: respiratory-model is placeholder content not yet finished.
-  it.skip("renders the respiratory-model markdown body, including its table", () => {
+  it.skip("renders the respiratory-model body, including its table", () => {
     const project = PROJECTS.find((entry) => entry.id === "respiratory-model");
     expect(project).toBeDefined();
-    const markup = renderMarkdownToHtml(project!.content);
-    expect(markup).toContain("<table>");
-    expect(markup).toContain("WGSL");
+    // `content` is already HTML — compiled at build time from index.md.
+    expect(project!.content).toContain("<table>");
+    expect(project!.content).toContain("WGSL");
   });
 });
 
@@ -96,9 +96,9 @@ describe("Blog content", () => {
   it.skip("renders truncated-tetrahedron post with table and external link", () => {
     const post = BLOG_POSTS.find((entry) => entry.id === "truncated-tetrahedron");
     expect(post).toBeDefined();
-    const markup = renderMarkdownToHtml(post!.content);
-    expect(markup).toContain("<table>");
-    expect(markup).toContain("Truncated tetrahedron");
-    expect(markup).toContain('target="_blank"');
+    // `content` is already HTML — compiled at build time from index.md.
+    expect(post!.content).toContain("<table>");
+    expect(post!.content).toContain("Truncated tetrahedron");
+    expect(post!.content).toContain('target="_blank"');
   });
 });

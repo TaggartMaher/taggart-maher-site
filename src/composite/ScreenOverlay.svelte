@@ -216,6 +216,13 @@
       `</foreignObject>` +
       `</svg>`;
 
+    // This must stay a percent-encoded data: URL. The obvious
+    // optimizations both fail in Chromium for SVG containing
+    // <foreignObject>: drawing an image loaded from a Blob object URL
+    // taints the destination canvas (the compositors' texImage2D then
+    // throws SecurityError), and createImageBitmap can't decode SVG
+    // blobs at all. The encodeURIComponent round-trip is the price of
+    // an untainted canvas.
     const dataUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
     const image = new Image();
     await new Promise<void>((resolve, reject) => {

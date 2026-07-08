@@ -1,7 +1,7 @@
-// Loads the homepage README markdown as a raw string. Imported by both
-// the desktop ReadmeApp and the lite HomePage so they render identical
-// content.
+// Loads the homepage README, pre-rendered to HTML at build time.
+// Imported by both the desktop ReadmeApp and the lite HomePage so they
+// render identical content.
 
-import readmeMarkdown from "./index.md?raw";
+import readmeHtml from "./index.md?html";
 
-export const README_MARKDOWN: string = readmeMarkdown;
+export const README_HTML: string = readmeHtml;

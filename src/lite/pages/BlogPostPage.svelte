@@ -19,7 +19,7 @@
       {post.icon ? post.icon + " " : ""}{post.tag} · {post.date} · {post.readtime}
     </p>
     <h1>{post.title}</h1>
-    <Markdown source={post.content} />
+    <Markdown html={post.content} />
     {#if post.links && post.links.length > 0}
       <h3>Links</h3>
       <ul class="lite-link-list">

@@ -110,7 +110,7 @@
           </div>
           <h2 class="serif">{current.name}</h2>
           <p class="lede">{current.oneliner}</p>
-          <Markdown source={current.content} />
+          <Markdown html={current.content} />
           <div class="kv-mini">
             <div class="kv-mini-k mono">stack</div>
             <div class="kv-mini-v">

@@ -41,7 +41,7 @@
             </span>
             <span class="post-meta mono">{selected.date} · {selected.readtime}</span>
           </div>
-          <Markdown source={selected.content} />
+          <Markdown html={selected.content} />
           {#if selected.links && selected.links.length > 0}
             <div class="detail-links">
               {#each selected.links as link (link.label)}

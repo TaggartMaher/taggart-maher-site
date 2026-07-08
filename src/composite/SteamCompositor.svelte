@@ -358,6 +358,10 @@
     // Last screen-source revision uploaded via texImage2D; -1 forces an
     // upload on the first frame.
     let lastUploadedScreenSourceRevision = -1;
+    // Dimensions of the screen texture's current GPU allocation — same
+    // texSubImage2D reuse as the static compositor.
+    let screenTextureWidth = 0;
+    let screenTextureHeight = 0;
     function currentFrameIndex(nowMs: number): number {
       const override = frameOverride;
       if (override !== null && Number.isFinite(override)) {
@@ -392,7 +396,16 @@
       gl.bindTexture(gl.TEXTURE_2D, screenTexture);
       const screenSourceRevision = screenSourceRevisionRef.current ?? 0;
       if (screenSourceRevision !== lastUploadedScreenSourceRevision) {
-        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, screenSource);
+        if (
+          screenSource.width === screenTextureWidth &&
+          screenSource.height === screenTextureHeight
+        ) {
+          gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, gl.RGBA, gl.UNSIGNED_BYTE, screenSource);
+        } else {
+          gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, screenSource);
+          screenTextureWidth = screenSource.width;
+          screenTextureHeight = screenSource.height;
+        }
         lastUploadedScreenSourceRevision = screenSourceRevision;
       }
 
