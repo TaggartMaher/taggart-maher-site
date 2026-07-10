@@ -123,7 +123,19 @@
 
     const gl = canvas.getContext("webgl2", { antialias: false, premultipliedAlpha: false });
     if (!gl) {
-      console.warn("[compositor] WebGL2 not available — fallback path will take over");
+      // The mode picker's WebGL2 probe reported support, but the real
+      // context could not be created (typically the GPU's live-context
+      // limit was reached). There is nothing this compositor can render,
+      // and leaving the page here would show a blank screen while the
+      // ScreenOverlay DOM rasterizer keeps churning. Escalate to
+      // FALLBACK_MODE — the same destination as the "compatibility mode"
+      // button — so the user lands on a working page. replace() rather
+      // than assign() so the back button doesn't return to this broken
+      // state.
+      console.warn("[compositor] WebGL2 not available — switching to fallback mode");
+      const fallbackUrl = new URL(window.location.href);
+      fallbackUrl.searchParams.set("mode", "fallback");
+      window.location.replace(fallbackUrl.pathname + fallbackUrl.search + fallbackUrl.hash);
       return;
     }
 

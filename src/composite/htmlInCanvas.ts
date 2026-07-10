@@ -34,5 +34,12 @@ export function detectHtmlInCanvasSupport(): boolean {
   cached = Boolean(
     gl && typeof (gl as unknown as TexElementImage2DContext).texElementImage2D === "function",
   );
+  // Free the probe context's slot right away — browsers cap live WebGL
+  // contexts, and an abandoned probe can starve the real compositor
+  // context on limited GPUs. See getWebGL2Support in mode/deviceInfo.ts.
+  const loseContextExtension = gl?.getExtension("WEBGL_lose_context");
+  if (loseContextExtension && typeof loseContextExtension.loseContext === "function") {
+    loseContextExtension.loseContext();
+  }
   return cached;
 }

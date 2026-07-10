@@ -83,6 +83,15 @@ export function getWebGL2Support(): WebGL2Support {
       missingExtensions.push(extensionName);
     }
   }
+  // Release the probe context immediately. Browsers cap the number of
+  // live WebGL contexts; on a software renderer or a driver with a tight
+  // limit, an abandoned probe context keeps its slot until GC and can
+  // starve the real compositor context — the probe then reports WebGL2
+  // "supported" while Compositor.getContext("webgl2") returns null.
+  const loseContextExtension = context.getExtension("WEBGL_lose_context");
+  if (loseContextExtension && typeof loseContextExtension.loseContext === "function") {
+    loseContextExtension.loseContext();
+  }
   return { supported: missingExtensions.length === 0, missingExtensions };
 }
 
